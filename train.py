@@ -83,6 +83,9 @@ def train(trial, model, trainDataLoader, cfg, params):
         model.train()
         step = 0
         for X, Y in trainDataLoader:
+            print("X.shape: ", X.size())
+            print("Y.size(): ", Y.size())
+            quit()
             optimizer.zero_grad()
             outputs = model(X)
             if cfg.train_forward_sig:

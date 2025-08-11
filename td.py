@@ -6,6 +6,7 @@ import torch
 import math
 import os
 import wandb
+import copy
 
 from torch.utils.data import TensorDataset, random_split, DataLoader
 from optuna.integration.wandb import WeightsAndBiasesCallback
@@ -50,9 +51,9 @@ def get_td_train_data(data_list, cfg):
     new_ep_list = []
     for ep in data_list:
         tile_length = ep.size(dim=0) - 1
-        print("ep.size: ", ep.size())
+        #print("ep.size: ", ep.size())
         for k in range(2, max_k+1):           
-            h_feat = torch.tensor(k / max_k).tile((tile_length, 1)) #horizon feature
+            h_feat = torch.tensor(k).tile((tile_length, 1)) #horizon feature
             terminal_info = torch.tensor(0).tile((tile_length, 1))
             terminal_info[-1][0] = 1
             new_sample = torch.cat((ep[:-1, :-1], ep[1:, :-1], h_feat, terminal_info, ep[1:, -1:]), dim=1)    
@@ -61,7 +62,7 @@ def get_td_train_data(data_list, cfg):
             new_ep_list.append(new_sample)
 
         #now do k=1
-        last_h_feat = torch.tensor(1 / max_k).tile((tile_length, 1))
+        last_h_feat = torch.tensor(1).tile((tile_length, 1))
         terminal_info = torch.tensor(1).tile((tile_length, 1))
         last_k_sample = torch.cat((ep[:-1, :-1], ep[1:, :-1], last_h_feat, terminal_info, ep[1:, -1:]), dim=1)
         #print("last_k_sample.size: ", last_k_sample.size())
@@ -152,6 +153,136 @@ def train_td(trial, model, trainData, valDataLoader, cfg, params):
             wandb.log(wandb_report)
     return model
 
+def get_target_from_batch(batch, targetModel, cfg):
+    """
+    batch (Tensor): N x ((state s ), (state s'), k (for s), terminal_info (for s'), true_value)
+    """
+    assert (batch.size(dim=1) - 3) % 2 == 0
+    state_dim = int((batch.size(dim=1) - 3) / 2)
+    max_k = cfg.max_k
+    with torch.no_grad():
+        input = batch[:, state_dim:-2]
+        input[:, -1:] = input[:, -1:] - 1
+        input[:, -1:] = input[:, -1:] / max_k
+        output = targetModel(input)
+    
+    for idx in range(batch.size(dim=0)):
+        if batch[idx][-2] == 1:
+            output[idx][0] = batch[idx][-1]
+    return input, output
+
+        
+    
+
+def train_td_new(trial, model, trainDataList, valDataLoader, cfg, params):
+    trainData = get_td_train_data(trainDataList, cfg)
+    trainDataset = TensorDataset(trainData)
+    trainDataLoader = DataLoader(trainDataset, batch_size=params["bs"], shuffle=True)
+
+    lr = params["lr"]
+    loss_fn = params["loss_fn"]
+    num_epochs = cfg.num_epochs
+    if num_epochs == 0:
+        num_epochs = 1
+    assert num_epochs > 0
+
+
+    #Data
+    model_storage_path = params["model_storage_path"]
+    study_name = cfg.optuna.study_name
+    model_path = model_storage_path + "/{}_trial_{}.pth".format(study_name, trial.number) #for saving
+
+    print("model_path train: ", model_path)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    #min_loss = float('inf')
+    #patience = 4 #times we can have an evaluation that is worse than minimum
+                 # corresponds to patience*5 epochs
+    #patience_counter = 0
+    #eps = 1e-5 #by how much loss should improve over patience period
+    sig = nn.Sigmoid()
+
+    #Training loop
+    step = 0
+    targetModel = copy.deepcopy(model)
+    targetModel.eval()
+    model.train()
+    for epoch in range(num_epochs): #)position=0, leave=False):
+        running_avg = 0.0
+        running_count = 0
+
+        for batch, in trainDataLoader:
+            X, Y = get_target_from_batch(batch, targetModel, cfg)
+            optimizer.zero_grad()
+            outputs = model(X)
+            if cfg.train_forward_sig:
+                outputs = sig(outputs)
+            loss = loss_fn(outputs, Y)
+            loss.backward()
+            optimizer.step()
+            
+            running_avg = running_avg*running_count + loss.item()*X.size(dim=0)
+            running_count = running_count + X.size(dim=0)
+            running_avg = running_avg/running_count
+
+            step = step + 1
+            if (step + 1) % 500 == 0:
+                print(f"Epoch: {epoch} Step: {step} Loss: {running_avg}")
+            if step % cfg.target_update_frequency == 0:
+                targetModel = copy.deepcopy(model)
+                targetModel.eval()
+                print("target model updated")
+            if step + 1 % 50000 == 0:
+                break
+        if (epoch + 1) % cfg.eval_frequency == 0:
+            val_loss, conf_mx = eval(model, valDataLoader, params["loss_fn"])
+            trial.report(-val_loss, epoch)
+            BA = get_ba_from_conf(*conf_mx.ravel())
+            wandb_report = {"epoch": epoch,
+                            "global step": step,
+                            "train/loss": running_avg,
+                            "validation/loss": val_loss,
+                            "validation/Balanced Accuracy": BA
+                            }
+            wandb.log(wandb_report)
+            
+        #print("Epoch {} complete with avg train loss {}".format(epoch, running_avg))
+        #train_loss_list.append(running_avg)
+
+        #Evaluation loop and early stopping
+        '''
+        if (epoch + 1) % 5 == 0:
+            val_loss, _ = eval(model, valDataLoader, loss_fn)
+            trial.report(-val_loss, epoch)
+            print("Epoch {} complete with avg val loss {}".format(epoch, val_loss))
+            if val_loss < min_loss:
+                min_loss = val_loss
+                torch.save(model.state_dict(), model_path)
+                patience_counter = 0
+            if trial.should_prune():
+                #trial.set_user_attr("pruned", True)
+                model.load_state_dict(torch.load(model_path, weights_only=True))
+                _, conf_mx = eval(model, valDataLoader, loss_fn)
+                BA = get_ba_from_conf(*conf_mx.ravel())
+                trial.report(BA, epoch + 1)
+                trial.set_user_attr("epochs_trained", epoch + 1)
+                raise optuna.TrialPruned()
+            else:
+                patience_counter += 1
+                if patience_counter > patience:
+                    trial.set_user_attr("epochs_trained", epoch + 1)
+                    model.load_state_dict(torch.load(model_path, weights_only=True))
+                    return model 
+        '''
+    '''
+    trial.set_user_attr("epochs_trained", epoch+1)
+    '''
+
+    #model_path = model_storage_path + "/{}_trial_{}".format(study_name, trial.number)
+    torch.save(model.state_dict(), model_path)
+    return model
+
+
 
 def objective(trial, cfg):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -198,7 +329,8 @@ def objective(trial, cfg):
     #training
     input_size = trainList[0].size(dim=1)
     myModel = GoalNet(input_size, hidden_sizes).to(device=device)
-    trainedModel = train_td(trial, myModel, trainList, valDataLoader, cfg, params)
+    #trainedModel = train_td(trial, myModel, trainList, valDataLoader, cfg, params)
+    trainedModel = train_td_new(trial, myModel, trainList, valDataLoader, cfg, params)
     _, conf_mx = eval(trainedModel, valDataLoader, loss_fn)
     BA = get_ba_from_conf(*conf_mx.ravel())
     return BA
