@@ -40,7 +40,7 @@ from utils import load_datasets, get_pos_weight, get_accuracy, get_ba_from_conf
 
 
 
-def train(trial, model, trainDataLoader, valDataLoader, loss_fn, lr, verbose=True):
+def train(trial, model, trainDataLoader, cfg, params):
     """
     Args:
         optuna trial
@@ -50,7 +50,18 @@ def train(trial, model, trainDataLoader, valDataLoader, loss_fn, lr, verbose=Tru
     Saves model with lowest val loss every 5 evaluation epochs or at final epoch if no early stoppage. 
     """
 
+    lr = params["lr"]
+    loss_fn = params["loss_fn"]
+    num_epochs = round(cfg.target_update_frequency / len(trainDataLoader))
+    if num_epochs == 0:
+        num_epochs = 1
+    assert num_epochs > 0
+    print("Innter loop epochs: ", num_epochs)
+
+
     #Data
+    model_storage_path = params["model_storage_path"]
+    study_name = cfg.optuna.study_name
     model_path = model_storage_path + "/{}_trial_{}.pth".format(study_name, trial.number) #for saving
 
     print("model_path train: ", model_path)
@@ -60,19 +71,22 @@ def train(trial, model, trainDataLoader, valDataLoader, loss_fn, lr, verbose=Tru
     patience = 4 #times we can have an evaluation that is worse than minimum
                  # corresponds to patience*5 epochs
     patience_counter = 0
-    eps = 1e-5 #by how much loss should improve over patience period
+    #eps = 1e-5 #by how much loss should improve over patience period
     #train_loss_list = []
     #val_loss_list = []
-    
+    sig = nn.Sigmoid()
 
     #Training loop
     for epoch in range(num_epochs): #)position=0, leave=False):
         running_avg = 0.0
         running_count = 0
         model.train()
+        step = 0
         for X, Y in trainDataLoader:
             optimizer.zero_grad()
             outputs = model(X)
+            if cfg.train_forward_sig:
+                outputs = sig(outputs)
             loss = loss_fn(outputs, Y)
             loss.backward()
             optimizer.step()
@@ -80,11 +94,19 @@ def train(trial, model, trainDataLoader, valDataLoader, loss_fn, lr, verbose=Tru
             running_avg = running_avg*running_count + loss.item()*X.size(dim=0)
             running_count = running_count + X.size(dim=0)
             running_avg = running_avg/running_count
+
+            step = step + 1
+            if (step + 1) % 500 == 0:
+                print(f"Step: {step}. Loss: {running_avg}")
+            if step > 10000:
+                wandb.log({"train_loss": running_avg})
+                break
             
         #print("Epoch {} complete with avg train loss {}".format(epoch, running_avg))
         #train_loss_list.append(running_avg)
 
         #Evaluation loop and early stopping
+        '''
         if (epoch + 1) % 5 == 0:
             val_loss, _ = eval(model, valDataLoader, loss_fn)
             trial.report(-val_loss, epoch)
@@ -107,9 +129,11 @@ def train(trial, model, trainDataLoader, valDataLoader, loss_fn, lr, verbose=Tru
                     trial.set_user_attr("epochs_trained", epoch + 1)
                     model.load_state_dict(torch.load(model_path, weights_only=True))
                     return model 
-    
-    #trial.set_user_attr("pruned", False)
+        '''
+    '''
     trial.set_user_attr("epochs_trained", epoch+1)
+    '''
+
     #model_path = model_storage_path + "/{}_trial_{}".format(study_name, trial.number)
     torch.save(model.state_dict(), model_path)
     return model
@@ -118,7 +142,7 @@ def train(trial, model, trainDataLoader, valDataLoader, loss_fn, lr, verbose=Tru
 # myModel = Model(input_size, hidden_sizes)
 # train(myModel)
 
-def eval(model, valDataLoader, loss_fn, verbose=True ):
+def eval(model, valDataLoader, loss_fn):
     """
     Evaluate model on validation set. Return average loss, confusion matrix and recall.
     """
@@ -154,7 +178,7 @@ def eval(model, valDataLoader, loss_fn, verbose=True ):
             
     return running_avg, conf_mx
 
-@wandbc.track_in_wandb()
+#@wandbc.track_in_wandb()
 def objective(trial):
     #hyperparameters
     n_layers = trial.suggest_int('n_layers', 1, 5)

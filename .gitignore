@@ -3,3 +3,9 @@
 .vscode/
 wandb/
 __pycache__/
+
+databases/
+models/
+outputs/
+
+databasestest.db

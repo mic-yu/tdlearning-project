@@ -1,0 +1,29 @@
+path: "../roboClassifier/data/n_eps-500-env-base_agent_env_2025-06-05_20-56-48.pkl" #training data path
+max_k: 100
+train_val_test_split: [0.6, 0.2, 0.2]
+target_update_frequency: 10000 #steps. Epoch atomatically adjusted with batch size
+num_epochs: 1
+train_forward_sig: True #Manually pass outputs of model during training through a sigmoid layer inside script. 
+                        #It is always turned off for the model.
+eval_frequency: 1 #Evaluation will happen every eval_frequeny epochs during training
+
+optuna:
+  n_layers_range: [1, 5]
+  num_neurons_range: [8, 64] #number of neurons in each layer
+  bs_range: [32, 256] #batch size range
+  bs_step: 32
+  lr_range: [1e-5, 1e-2]
+
+  study_name: "test"
+  storage_path: "./models/"
+  db_dir: "./databases"
+  db_name: "test.db"
+
+  num_trials: 1
+  n_startup_trials: 10
+
+wandb:
+  entity: "dpinchuk-university-of-wisconsin-madison"
+  project: "td_mutlirun_test" #"td_test"
+
+

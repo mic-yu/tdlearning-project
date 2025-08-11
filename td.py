@@ -1,11 +1,24 @@
-#from train import train
-from utils import load_data_tensors
-from torch.utils.data import TensorDataset, random_split
-from GoalNet import GoalNet
 import numpy as np
+import hydra
+import optuna
 import pickle
 import torch
 import math
+import os
+import wandb
+
+from torch.utils.data import TensorDataset, random_split, DataLoader
+from optuna.integration.wandb import WeightsAndBiasesCallback
+from datetime import datetime
+from functools import partial
+from omegaconf import OmegaConf
+from tqdm import tqdm
+from torch import nn
+
+from utils import load_data_tensors, get_ba_from_conf
+from GoalNet import GoalNet
+from train import train, eval
+
 
 def get_episode_data(path, train_val_test_split):
     with open(path, 'rb') as f:
@@ -28,64 +41,201 @@ def get_episode_data(path, train_val_test_split):
 
     return train_list, val_list, test_list
 
-
-def get_nn_data(model, data_list, max_k):
+def get_td_train_data(data_list, cfg):
     """
     Args:
         data (List of episodes)
     """
+    max_k = cfg.max_k
     new_ep_list = []
     for ep in data_list:
         tile_length = ep.size(dim=0) - 1
+        print("ep.size: ", ep.size())
         for k in range(2, max_k+1):           
             h_feat = torch.tensor(k / max_k).tile((tile_length, 1)) #horizon feature
-            h_feat_next = torch.tensor((k-1) / max_k).tile((tile_length, 1)) #next horizon feature
-            print("h_feat.size: ", h_feat.size())
-            print("ep.size: ", ep.size())
-            boot_v = model(torch.cat((ep[1:, :-1], h_feat_next), dim=1))
-            new_feature_data = torch.cat((ep[:-1, :-1], h_feat), dim=1)
-            new_data = torch.cat((new_feature_data, boot_v), dim=1)
-            
-            new_terminal_sample = torch.cat((ep[-1, :-1], torch.tensor([k / max_k]), ep[-1, -1:]))
-            print("new_sample size: ", new_terminal_sample.size())
-            new_data = torch.cat((new_data, new_terminal_sample), dim=0)
-            print("new data size: ", new_data.size())
-            new_ep_list.append(new_data)
+            terminal_info = torch.tensor(0).tile((tile_length, 1))
+            terminal_info[-1][0] = 1
+            new_sample = torch.cat((ep[:-1, :-1], ep[1:, :-1], h_feat, terminal_info, ep[1:, -1:]), dim=1)    
+            new_sample[-k:, -1] = ep[-1][-1]
+            #print("new_sample.size: ", new_sample.size())
+            new_ep_list.append(new_sample)
 
         #now do k=1
         last_h_feat = torch.tensor(1 / max_k).tile((tile_length, 1))
-        last_k_sample = torch.cat(ep[:-1, :-1], last_h_feat, ep[1:, -1:])
+        terminal_info = torch.tensor(1).tile((tile_length, 1))
+        last_k_sample = torch.cat((ep[:-1, :-1], ep[1:, :-1], last_h_feat, terminal_info, ep[1:, -1:]), dim=1)
+        #print("last_k_sample.size: ", last_k_sample.size())
         new_ep_list.append(last_k_sample)
         
         
+    dataTensor = torch.cat(new_ep_list, dim=0)
+    return dataTensor
 
+def td_data_update(model, data_list, cfg):
+    """
+    Args:
+        data (List of episodes)
+    """
+    model.eval()
+    max_k = cfg.max_k
+    new_ep_list = []
+    for ep in data_list:
+        tile_length = ep.size(dim=0) - 2
+        for k in range(2, max_k+1):           
+            h_feat = torch.tensor(k / max_k).tile((tile_length, 1)) #horizon feature
+            h_feat_next = torch.tensor((k-1) / max_k).tile((tile_length, 1)) #next horizon feature
+            #print("h_feat.size: ", h_feat.size())
+            #print("ep.size: ", ep.size())
+            boot_v = model(torch.cat((ep[1:-1, :-1], h_feat_next), dim=1))
+            new_feature_data = torch.cat((ep[:-2, :-1], h_feat), dim=1)
+            new_data = torch.cat((new_feature_data, boot_v), dim=1)
+            
+            new_terminal_sample = torch.cat((ep[-2, :-1], torch.tensor([k / max_k]), ep[-1, -1:])).unsqueeze(0)
+            #print("new_sample size: ", new_terminal_sample.size())
+            new_data = torch.cat((new_data, new_terminal_sample), dim=0)
+            #print("new data size: ", new_data.size())
+            new_ep_list.append(new_data)
+
+        #now do k=1
+        last_h_feat = torch.tensor(1 / max_k).tile((tile_length + 1, 1))
+        last_k_sample = torch.cat((ep[:-1, :-1], last_h_feat, ep[1:, -1:]), dim=1)
+        new_ep_list.append(last_k_sample)
+        
+    dataTensor = torch.cat(new_ep_list, dim=0)
+    return dataTensor
+
+def get_val_data(data_list, cfg):
+    """
+    Args:
+        data (List of episodes)
+    """
+    max_k = cfg.max_k
+    new_ep_list = []
+    for ep in data_list:
+        tile_length = ep.size(dim=0) - 1
+        for k in range(2, max_k+1):  
+
+            #add k feature
+            h_feat = torch.tensor(k / max_k).tile((tile_length, 1)) #horizon feature
+            new_feature_data = torch.cat((ep[:-1, :-1], h_feat, ep[1:, -1:]), dim=1)
+            #label the data according to horizon k
+            new_feature_data[-k:, -1] = ep[-1][-1]
+            
+            new_ep_list.append(new_feature_data)
+
+        #now do k=1
+        last_h_feat = torch.tensor(1 / max_k).tile((tile_length, 1))
+        last_k_sample = torch.cat((ep[:-1, :-1], last_h_feat, ep[1:, -1:]), dim=1)
+        new_ep_list.append(last_k_sample)
+        
     dataTensor = torch.cat(new_ep_list, dim=0)
     return dataTensor
     
 
-def train_td(model, data, max_k):
-    dataTensor = get_nn_data(model, data, max_k)
-    nn_train_val_split = [0.8, 0.2]
-    assert sum(nn_train_val_split) == 1
-    nn_dataset = TensorDataset(dataTensor[:, :-1], dataTensor[:, -1:])
-    generator = torch.Generator().manual_seed(37)
-    trainSubset, valSubset = random_split(nn_dataset, nn_train_val_split, generator=generator)
+def train_td(trial, model, trainData, valDataLoader, cfg, params):
+    for epoch in range(cfg.num_epochs):
+        with torch.no_grad():
+            dataTensor = td_data_update(model, trainData, cfg)
+        nn_dataset = TensorDataset(dataTensor[:, :-1], dataTensor[:, -1:])
+        dataloader = DataLoader(nn_dataset, batch_size=params["bs"], shuffle=True)
+        model = train(trial, model, dataloader, cfg, params)
+
+        if (epoch + 1) % cfg.eval_frequency == 0:
+            val_loss, conf_mx = eval(model, valDataLoader, params["loss_fn"])
+            trial.report(-val_loss, epoch)
+            BA = get_ba_from_conf(*conf_mx.ravel())
+            wandb_report = {"epoch": epoch,
+                            "val_loss": val_loss,
+                            "BA": BA,
+                            "len_train_dataloader": len(dataloader)
+                            }
+            wandb.log(wandb_report)
+    return model
 
 
-    
-if __name__ == '__main__':
-    train_val_test_split = [0.6, 0.2, 0.2]
-    path = "../roboClassifier/data/n_eps-500-env-base_agent_env_2025-06-05_20-56-48.pkl"
-    max_k = 100
+def objective(trial, cfg):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    _, valData, testData = load_data_tensors(path, train_val_test_split)
-    trainList, _, _ = get_episode_data(path, train_val_test_split)
 
-    input_size = valData.size(dim=1) #note data is features + labels, but we need an extra feature in input
-    print("input sozie ; ", input_size)
-    hidden_sizes = [10, 10]
-    print(input_size)
-    print(valData.dtype)
-    print(trainList[0].dtype)
-    model =  GoalNet(input_size, hidden_sizes).to(device=device)
-    train_td(model, trainList, max_k)
+    storage_path = cfg.optuna.storage_path
+    study_name = cfg.optuna.study_name
+    model_storage_path = storage_path + study_name
+    os.makedirs(model_storage_path, exist_ok=True)
+
+    #initialize hyperparameters with optuna from config ranges
+    n_layers_min = cfg.optuna.n_layers_range[0]
+    n_layers_max = cfg.optuna.n_layers_range[1]
+    n_layers = trial.suggest_int('n_layers', n_layers_min, n_layers_max)
+
+    num_neurons_min = cfg.optuna.num_neurons_range[0]
+    num_neurons_max = cfg.optuna.num_neurons_range[1]
+    hidden_sizes = []
+    for i in range(n_layers):
+        num_neurons = trial.suggest_int('neurons_layer_{}'.format(i), num_neurons_min, num_neurons_max)
+        hidden_sizes.append(num_neurons)
+
+    lr_min = cfg.optuna.lr_range[0]
+    lr_max = cfg.optuna.lr_range[1]
+    lr = trial.suggest_float('lr', lr_min, lr_max, log=True)
+
+    bs_min = cfg.optuna.bs_range[0]
+    bs_max = cfg.optuna.bs_range[1]
+    bs_step = cfg.optuna.bs_step
+    batch_size = trial.suggest_int('bs', bs_min, bs_max, step=bs_step)
+
+    params = {"n_layers": n_layers, "hidden_sizes": hidden_sizes, "lr": lr, "bs": batch_size}
+    params["model_storage_path"] = model_storage_path
+
+    loss_fn = nn.MSELoss()
+    params["loss_fn"] = loss_fn
+    #loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+    #Data
+    trainList, valList, _ = get_episode_data(cfg.path, cfg.train_val_test_split)
+    valData = get_val_data(valList, cfg)
+    valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
+    valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True)
+
+    #training
+    input_size = trainList[0].size(dim=1)
+    myModel = GoalNet(input_size, hidden_sizes).to(device=device)
+    trainedModel = train_td(trial, myModel, trainList, valDataLoader, cfg, params)
+    _, conf_mx = eval(trainedModel, valDataLoader, loss_fn)
+    BA = get_ba_from_conf(*conf_mx.ravel())
+    return BA
+
+@hydra.main(version_base=None, config_path=".", config_name="config")
+def run(cfg):
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_name = current_time
+    wandb_kwargs = {
+        "entity": cfg.wandb.entity,
+        "project": cfg.wandb.project,
+        "config": OmegaConf.to_container(cfg),
+        "name": run_name
+        }
+    wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)
+    partial_objective = partial(objective,  cfg=cfg)
+    wandbc_decorator = wandbc.track_in_wandb()
+    decorated_objective = wandbc_decorator(partial_objective)
+
+    study_name = cfg.optuna.study_name
+    storage_path = cfg.optuna.storage_path
+    num_trials = cfg.optuna.num_trials
+    db_dir = cfg.optuna.db_dir
+    os.makedirs(db_dir, exist_ok=True)
+    db_name = cfg.optuna.db_name
+    db_path = "sqlite:///" + db_dir + db_name
+
+    print("db_path: ", db_path)
+    os.makedirs(storage_path, exist_ok=True)
+    n_startup_trials = cfg.optuna.n_startup_trials
+    study = optuna.create_study(direction="maximize",
+                pruner=optuna.pruners.MedianPruner(n_startup_trials=n_startup_trials, n_warmup_steps=50, interval_steps=1), 
+                study_name=study_name, 
+                storage=db_path, 
+                load_if_exists=True)
+    study.optimize(decorated_objective, n_trials=num_trials, n_jobs=1, callbacks=[wandbc])
+
+
+if __name__ == '__main__':
+    run()
