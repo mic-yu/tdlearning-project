@@ -1,4 +1,4 @@
-path: "../roboClassifier/data/n_eps-500-env-base_agent_env_2025-06-05_20-56-48.pkl" #training data path
+path: "./data/n_eps-500-env-base_agent_env_2025-06-05_20-56-48.pkl" #training data path
 max_k: 100
 train_val_test_split: [0.6, 0.2, 0.2]
 target_update_frequency: 10000 #steps. Epoch atomatically adjusted with batch size

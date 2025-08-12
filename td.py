@@ -340,7 +340,7 @@ def objective(trial, cfg):
 
     params["input_size"] = input_size
     params["trial_number"] = trial.number
-    
+
     wb_config = OmegaConf.to_container(cfg)
     wb_config["params"] = params
     wandb_kwargs = {
