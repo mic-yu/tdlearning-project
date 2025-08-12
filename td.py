@@ -174,7 +174,7 @@ def get_target_from_batch(batch, targetModel, cfg):
         
     
 
-def train_td_new(trial, model, trainDataList, valDataLoader, cfg, params):
+def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
     trainData = get_td_train_data(trainDataList, cfg)
     trainDataset = TensorDataset(trainData)
     trainDataLoader = DataLoader(trainDataset, batch_size=params["bs"], shuffle=True)
@@ -188,11 +188,7 @@ def train_td_new(trial, model, trainDataList, valDataLoader, cfg, params):
 
 
     #Data
-    model_storage_path = params["model_storage_path"]
-    study_name = cfg.optuna.study_name
-    model_path = model_storage_path + "/{}_trial_{}.pth".format(study_name, trial.number) #for saving
-
-    print("model_path train: ", model_path)
+    model_path = params["model_storage_path"] #for saving
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     #min_loss = float('inf')
@@ -226,14 +222,17 @@ def train_td_new(trial, model, trainDataList, valDataLoader, cfg, params):
             running_avg = running_avg/running_count
 
             step = step + 1
-            if (step + 1) % 500 == 0:
-                print(f"Epoch: {epoch} Step: {step} Loss: {running_avg}")
+            if (step + 1) % cfg.train_loss_frequency == 0:
+                #print(f"Epoch: {epoch} Step: {step} Loss: {running_avg}")
+                wb_run.log({"train/loss": running_avg,
+                           "epoch": epoch,
+                           "global step": step,
+                           })
+                running_avg = 0.0
+                running_count = 0
             if step % cfg.target_update_frequency == 0:
                 targetModel = copy.deepcopy(model)
                 targetModel.eval()
-                print("target model updated")
-            if step + 1 % 50000 == 0:
-                break
         if (epoch + 1) % cfg.eval_frequency == 0:
             val_loss, conf_mx = eval(model, valDataLoader, params["loss_fn"])
             trial.report(-val_loss, epoch)
@@ -244,7 +243,7 @@ def train_td_new(trial, model, trainDataList, valDataLoader, cfg, params):
                             "validation/loss": val_loss,
                             "validation/Balanced Accuracy": BA
                             }
-            wandb.log(wandb_report)
+            wb_run.log(wandb_report)
             
         #print("Epoch {} complete with avg train loss {}".format(epoch, running_avg))
         #train_loss_list.append(running_avg)
@@ -285,12 +284,17 @@ def train_td_new(trial, model, trainDataList, valDataLoader, cfg, params):
 
 
 def objective(trial, cfg):
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_name = f"trial_{trial.number}_{current_time}"
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    storage_path = cfg.optuna.storage_path
+    model_storage_dir = cfg.optuna.model_storage_dir
     study_name = cfg.optuna.study_name
-    model_storage_path = storage_path + study_name
-    os.makedirs(model_storage_path, exist_ok=True)
+    model_storage_dir = os.path.join(model_storage_dir, study_name)
+    os.makedirs(model_storage_dir, exist_ok=True)
+    model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}.pth".format(study_name, trial.number))
+    print("model_storage_path: ", model_storage_path)
 
     #initialize hyperparameters with optuna from config ranges
     n_layers_min = cfg.optuna.n_layers_range[0]
@@ -313,12 +317,16 @@ def objective(trial, cfg):
     bs_step = cfg.optuna.bs_step
     batch_size = trial.suggest_int('bs', bs_min, bs_max, step=bs_step)
 
-    params = {"n_layers": n_layers, "hidden_sizes": hidden_sizes, "lr": lr, "bs": batch_size}
-    params["model_storage_path"] = model_storage_path
-
     loss_fn = nn.MSELoss()
-    params["loss_fn"] = loss_fn
     #loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+    params = {"n_layers": n_layers, 
+              "hidden_sizes": hidden_sizes, 
+              "lr": lr, 
+              "bs": batch_size,
+              "loss_fn": loss_fn,
+              "model_storage_path": model_storage_path
+              }
 
     #Data
     trainList, valList, _ = get_episode_data(cfg.path, cfg.train_val_test_split)
@@ -329,44 +337,63 @@ def objective(trial, cfg):
     #training
     input_size = trainList[0].size(dim=1)
     myModel = GoalNet(input_size, hidden_sizes).to(device=device)
+
+    params["input_size"] = input_size
+    params["trial_number"] = trial.number
+    
+    wb_config = OmegaConf.to_container(cfg)
+    wb_config["params"] = params
+    wandb_kwargs = {
+        "entity": cfg.wandb.entity,
+        "project": cfg.wandb.project,
+        "config": wb_config,
+        "name": run_name
+        }
+    wb_run = wandb.init(**wandb_kwargs)
     #trainedModel = train_td(trial, myModel, trainList, valDataLoader, cfg, params)
-    trainedModel = train_td_new(trial, myModel, trainList, valDataLoader, cfg, params)
-    _, conf_mx = eval(trainedModel, valDataLoader, loss_fn)
+    trainedModel = train_td_new(trial, wb_run, myModel, trainList, valDataLoader, cfg, params)
+    final_loss, conf_mx = eval(trainedModel, valDataLoader, loss_fn)
     BA = get_ba_from_conf(*conf_mx.ravel())
+
+    wb_run.summary["Final BA"] = BA
+    wb_run.summary["Final eval loss"] = final_loss
+    wb_run.finish()
+    
     return BA
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def run(cfg):
-    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_name = current_time
-    wandb_kwargs = {
-        "entity": cfg.wandb.entity,
-        "project": cfg.wandb.project,
-        "config": OmegaConf.to_container(cfg),
-        "name": run_name
-        }
-    wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)
+    # current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    # run_name = current_time
+    # wandb_kwargs = {
+    #     "entity": cfg.wandb.entity,
+    #     "project": cfg.wandb.project,
+    #     "config": OmegaConf.to_container(cfg),
+    #     "name": run_name
+    #     }
+    #wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)
+    wandb.login()
     partial_objective = partial(objective,  cfg=cfg)
-    wandbc_decorator = wandbc.track_in_wandb()
-    decorated_objective = wandbc_decorator(partial_objective)
+    #wandbc_decorator = wandbc.track_in_wandb()
+    #decorated_objective = wandbc_decorator(partial_objective)
 
     study_name = cfg.optuna.study_name
-    storage_path = cfg.optuna.storage_path
+    model_storage_dir = cfg.optuna.model_storage_dir
     num_trials = cfg.optuna.num_trials
     db_dir = cfg.optuna.db_dir
     os.makedirs(db_dir, exist_ok=True)
     db_name = cfg.optuna.db_name
-    db_path = "sqlite:///" + db_dir + db_name
-
+    db_path = os.path.join("sqlite:///", db_dir, db_name)
     print("db_path: ", db_path)
-    os.makedirs(storage_path, exist_ok=True)
+
+    os.makedirs(model_storage_dir, exist_ok=True)
     n_startup_trials = cfg.optuna.n_startup_trials
     study = optuna.create_study(direction="maximize",
                 pruner=optuna.pruners.MedianPruner(n_startup_trials=n_startup_trials, n_warmup_steps=50, interval_steps=1), 
                 study_name=study_name, 
                 storage=db_path, 
                 load_if_exists=True)
-    study.optimize(decorated_objective, n_trials=num_trials, n_jobs=1, callbacks=[wandbc])
+    study.optimize(partial_objective, n_trials=num_trials, n_jobs=1) # callbacks=[wandbc])
 
 
 if __name__ == '__main__':

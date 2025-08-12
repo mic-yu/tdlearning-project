@@ -2,10 +2,13 @@ path: "../roboClassifier/data/n_eps-500-env-base_agent_env_2025-06-05_20-56-48.p
 max_k: 100
 train_val_test_split: [0.6, 0.2, 0.2]
 target_update_frequency: 10000 #steps. Epoch atomatically adjusted with batch size
-num_epochs: 3
+num_epochs: 1
 train_forward_sig: True #Manually pass outputs of model during training through a sigmoid layer inside script. 
                         #It is always turned off for the model.
-eval_frequency: 1 #Evaluation will happen every eval_frequeny epochs during training
+eval_frequency: 1 #Evaluation will happen every eval_frequency epochs during training
+train_loss_frequency: 1000 #Report running avg loss after this inteverval of steps
+loss_fn: "MSE"
+optimizer: "Adam"
 
 optuna:
   n_layers_range: [1, 5]
@@ -15,8 +18,8 @@ optuna:
   lr_range: [1e-5, 1e-2]
 
   study_name: "test"
-  storage_path: "./models/"
-  db_dir: "./databases"
+  model_storage_dir: "models"
+  db_dir: "databases"
   db_name: "test.db"
 
   num_trials: 1
