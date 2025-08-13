@@ -7,6 +7,7 @@ import math
 import os
 import wandb
 import copy
+import time
 
 from torch.utils.data import TensorDataset, random_split, DataLoader
 from optuna.integration.wandb import WeightsAndBiasesCallback
@@ -153,7 +154,7 @@ def train_td(trial, model, trainData, valDataLoader, cfg, params):
             wandb.log(wandb_report)
     return model
 
-def get_target_from_batch(batch, targetModel, cfg):
+def get_target_from_batch(batch, targetModel, cfg, params):
     """
     batch (Tensor): N x ((state s ), (state s'), k (for s), terminal_info (for s'), true_value)
     """
@@ -176,6 +177,7 @@ def get_target_from_batch(batch, targetModel, cfg):
 
 def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
     trainData = get_td_train_data(trainDataList, cfg)
+    trainData = trainData.to(device=params["device"])
     trainDataset = TensorDataset(trainData)
     trainDataLoader = DataLoader(trainDataset, batch_size=params["bs"], shuffle=True)
 
@@ -202,13 +204,15 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
     step = 0
     targetModel = copy.deepcopy(model)
     targetModel.eval()
+    targetModel.to(device=params["device"])
     model.train()
+    start_time = time.time()
     for epoch in range(num_epochs): #)position=0, leave=False):
         running_avg = 0.0
         running_count = 0
 
         for batch, in trainDataLoader:
-            X, Y = get_target_from_batch(batch, targetModel, cfg)
+            X, Y = get_target_from_batch(batch, targetModel, cfg, params)
             optimizer.zero_grad()
             outputs = model(X)
             if cfg.train_forward_sig:
@@ -233,15 +237,18 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
             if step % cfg.target_update_frequency == 0:
                 targetModel = copy.deepcopy(model)
                 targetModel.eval()
+                targetModel.to(device=params["device"])
         if (epoch + 1) % cfg.eval_frequency == 0:
             val_loss, conf_mx = eval(model, valDataLoader, params["loss_fn"])
             trial.report(-val_loss, epoch)
             BA = get_ba_from_conf(*conf_mx.ravel())
+            elapsed_time = (time.time() - start_time) / 60
             wandb_report = {"epoch": epoch,
                             "global step": step,
                             "train/loss": running_avg,
                             "validation/loss": val_loss,
-                            "validation/Balanced Accuracy": BA
+                            "validation/Balanced Accuracy": BA,
+                            "Elapsed Time Minutes": elapsed_time
                             }
             wb_run.log(wandb_report)
             
@@ -330,7 +337,7 @@ def objective(trial, cfg):
 
     #Data
     trainList, valList, _ = get_episode_data(cfg.path, cfg.train_val_test_split)
-    valData = get_val_data(valList, cfg)
+    valData = get_val_data(valList, cfg).to(device=device)
     valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
     valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True)
 
@@ -351,6 +358,7 @@ def objective(trial, cfg):
         }
     wb_run = wandb.init(**wandb_kwargs)
     #trainedModel = train_td(trial, myModel, trainList, valDataLoader, cfg, params)
+    params["device"] = device
     trainedModel = train_td_new(trial, wb_run, myModel, trainList, valDataLoader, cfg, params)
     final_loss, conf_mx = eval(trainedModel, valDataLoader, loss_fn)
     BA = get_ba_from_conf(*conf_mx.ravel())
