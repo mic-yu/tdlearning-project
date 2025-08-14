@@ -1,11 +1,11 @@
-path: "./data/n_eps-500-env-base_agent_env_2025-06-05_20-56-48.pkl" #training data path
+path: "./data/n_eps-100-env-base_agent_env_2025-08-13_16-12-02.pkl" #training data path
 max_k: 100
 train_val_test_split: [0.6, 0.2, 0.2]
 target_update_frequency: 10000 #steps. Epoch atomatically adjusted with batch size
-num_epochs: 1
+num_epochs: 100
 train_forward_sig: True #Manually pass outputs of model during training through a sigmoid layer inside script. 
                         #It is always turned off for the model.
-eval_frequency: 1 #Evaluation will happen every eval_frequency epochs during training
+eval_frequency: 5 #Evaluation will happen every eval_frequency epochs during training
 train_loss_frequency: 1000 #Report running avg loss after this inteverval of steps
 loss_fn: "MSE"
 optimizer: "Adam"
@@ -13,20 +13,20 @@ optimizer: "Adam"
 optuna:
   n_layers_range: [1, 5]
   num_neurons_range: [8, 64] #number of neurons in each layer
-  bs_range: [32, 256] #batch size range
+  bs_range: [32, 512] #batch size range
   bs_step: 32
   lr_range: [1e-5, 1e-2]
 
-  study_name: "test"
+  study_name: "tdgoal"
   model_storage_dir: "models"
   db_dir: "databases"
-  db_name: "test.db"
+  db_name: "tdgoal.db"
 
-  num_trials: 1
+  num_trials: 50
   n_startup_trials: 10
 
 wandb:
   entity: "dpinchuk-university-of-wisconsin-madison"
-  project: "td_mutlirun_test" #"td_test"
+  project: "tdgoal" #"td_test"
 
 

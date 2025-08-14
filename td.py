@@ -179,6 +179,8 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
     trainData = get_td_train_data(trainDataList, cfg)
     trainData = trainData.to(device=params["device"])
     trainDataset = TensorDataset(trainData)
+    #generator = torch.Generator().manual_seed(37)
+    #debugDataset, _ = torch.utils.data.random_split(trainDataset, [0.2, 0.8], generator=generator)
     trainDataLoader = DataLoader(trainDataset, batch_size=params["bs"], shuffle=True)
 
     lr = params["lr"]
@@ -229,8 +231,7 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
             if (step + 1) % cfg.train_loss_frequency == 0:
                 #print(f"Epoch: {epoch} Step: {step} Loss: {running_avg}")
                 wb_run.log({"train/loss": running_avg,
-                           "epoch": epoch,
-                           "global step": step,
+                           "optimization step": step,
                            })
                 running_avg = 0.0
                 running_count = 0
@@ -244,7 +245,7 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
             BA = get_ba_from_conf(*conf_mx.ravel())
             elapsed_time = (time.time() - start_time) / 60
             wandb_report = {"epoch": epoch,
-                            "global step": step,
+                            "optimization step": step,
                             "train/loss": running_avg,
                             "validation/loss": val_loss,
                             "validation/Balanced Accuracy": BA,
