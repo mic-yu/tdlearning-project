@@ -1,8 +1,8 @@
 path: "./data/n_eps-100-env-base_agent_env_2025-08-13_16-12-02.pkl" #training data path
-max_k: 100
+max_k: 10
 train_val_test_split: [0.6, 0.2, 0.2]
 target_update_frequency: 10000 #steps. Epoch atomatically adjusted with batch size
-num_epochs: 100
+num_epochs: 1
 train_forward_sig: True #Manually pass outputs of model during training through a sigmoid layer inside script. 
                         #It is always turned off for the model.
 eval_frequency: 5 #Evaluation will happen every eval_frequency epochs during training
@@ -17,16 +17,16 @@ optuna:
   bs_step: 32
   lr_range: [1e-5, 1e-2]
 
-  study_name: "tdgoal"
+  study_name: "tdgoal_test"
   model_storage_dir: "models"
   db_dir: "databases"
   db_name: "tdgoal.db"
 
-  num_trials: 50
+  num_trials: 1
   n_startup_trials: 10
 
 wandb:
   entity: "dpinchuk-university-of-wisconsin-madison"
-  project: "tdgoal" #"td_test"
+  project: "tdgoal_test" #"td_test"
 
 

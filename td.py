@@ -60,6 +60,7 @@ def get_td_train_data(data_list, cfg):
             new_sample = torch.cat((ep[:-1, :-1], ep[1:, :-1], h_feat, terminal_info, ep[1:, -1:]), dim=1)    
             new_sample[-k:, -1] = ep[-1][-1]
             #print("new_sample.size: ", new_sample.size())
+            #print("tile size: ", tile_length)
             new_ep_list.append(new_sample)
 
         #now do k=1
@@ -115,7 +116,7 @@ def get_val_data(data_list, cfg):
     new_ep_list = []
     for ep in data_list:
         tile_length = ep.size(dim=0) - 1
-        for k in range(2, max_k+1):  
+        for k in range(1, max_k+1):  
 
             #add k feature
             h_feat = torch.tensor(k / max_k).tile((tile_length, 1)) #horizon feature
@@ -126,9 +127,9 @@ def get_val_data(data_list, cfg):
             new_ep_list.append(new_feature_data)
 
         #now do k=1
-        last_h_feat = torch.tensor(1 / max_k).tile((tile_length, 1))
-        last_k_sample = torch.cat((ep[:-1, :-1], last_h_feat, ep[1:, -1:]), dim=1)
-        new_ep_list.append(last_k_sample)
+        # last_h_feat = torch.tensor(1 / max_k).tile((tile_length, 1))
+        # last_k_sample = torch.cat((ep[:-1, :-1], last_h_feat, ep[1:, -1:]), dim=1)
+        # new_ep_list.append(last_k_sample)
         
     dataTensor = torch.cat(new_ep_list, dim=0)
     return dataTensor
@@ -162,15 +163,17 @@ def get_target_from_batch(batch, targetModel, cfg, params):
     state_dim = int((batch.size(dim=1) - 3) / 2)
     max_k = cfg.max_k
     with torch.no_grad():
-        input = batch[:, state_dim:-2]
-        input[:, -1:] = input[:, -1:] - 1
-        input[:, -1:] = input[:, -1:] / max_k
-        output = targetModel(input)
+        target_input = batch[:, state_dim:-2]
+        target_input[:, -1:] = target_input[:, -1:] - 1
+        target_input[:, -1:] = target_input[:, -1:] / max_k
+        Y = targetModel(target_input)
     
     for idx in range(batch.size(dim=0)):
         if batch[idx][-2] == 1:
-            output[idx][0] = batch[idx][-1]
-    return input, output
+            Y[idx][0] = batch[idx][-1]
+    
+    X = batch[:, :state_dim]
+    return X, Y
 
         
     
