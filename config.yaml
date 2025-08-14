@@ -2,7 +2,7 @@ path: "./data/n_eps-100-env-base_agent_env_2025-08-13_16-12-02.pkl" #training da
 max_k: 10
 train_val_test_split: [0.6, 0.2, 0.2]
 target_update_frequency: 10000 #steps. Epoch atomatically adjusted with batch size
-num_epochs: 1
+num_epochs: 100
 train_forward_sig: True #Manually pass outputs of model during training through a sigmoid layer inside script. 
                         #It is always turned off for the model.
 eval_frequency: 5 #Evaluation will happen every eval_frequency epochs during training

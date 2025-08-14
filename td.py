@@ -172,7 +172,7 @@ def get_target_from_batch(batch, targetModel, cfg, params):
         if batch[idx][-2] == 1:
             Y[idx][0] = batch[idx][-1]
     
-    X = batch[:, :state_dim]
+    X = torch.cat((batch[:, :state_dim], batch[:, -3:-2]), dim=1)
     return X, Y
 
         
