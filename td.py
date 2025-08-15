@@ -210,19 +210,20 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
     targetModel = copy.deepcopy(model)
     targetModel.eval()
     targetModel.to(device=params["device"])
-    model.train()
     start_time = time.time()
     for epoch in range(num_epochs): #)position=0, leave=False):
         running_avg = 0.0
         running_count = 0
-
+        model.train()
         for batch, in trainDataLoader:
             X, Y = get_target_from_batch(batch, targetModel, cfg, params)
             optimizer.zero_grad()
             outputs = model(X)
             if cfg.train_forward_sig:
                 outputs = sig(outputs)
+
             loss = loss_fn(outputs, Y)
+            #print(f"Step: {step} Loss: {loss.item()}")
             loss.backward()
             optimizer.step()
             

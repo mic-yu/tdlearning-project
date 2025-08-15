@@ -1,7 +1,7 @@
 path: "./data/n_eps-100-env-base_agent_env_2025-08-13_16-12-02.pkl" #training data path
 max_k: 10
 train_val_test_split: [0.6, 0.2, 0.2]
-target_update_frequency: 10000 #steps. Epoch atomatically adjusted with batch size
+target_update_frequency: 1000 #steps. Epoch atomatically adjusted with batch size
 num_epochs: 100
 train_forward_sig: True #Manually pass outputs of model during training through a sigmoid layer inside script. 
                         #It is always turned off for the model.
