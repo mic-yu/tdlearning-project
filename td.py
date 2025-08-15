@@ -239,10 +239,11 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
                            })
                 running_avg = 0.0
                 running_count = 0
-            if step % cfg.target_update_frequency == 0:
+            if step % params["target_update_frequency"] == 0:
                 targetModel = copy.deepcopy(model)
                 targetModel.eval()
                 targetModel.to(device=params["device"])
+                print(f"Step: {step} targetModel updated")
         if (epoch + 1) % cfg.eval_frequency == 0:
             val_loss, conf_mx = eval(model, valDataLoader, params["loss_fn"])
             trial.report(-val_loss, epoch)
@@ -328,6 +329,11 @@ def objective(trial, cfg):
     bs_max = cfg.optuna.bs_range[1]
     bs_step = cfg.optuna.bs_step
     batch_size = trial.suggest_int('bs', bs_min, bs_max, step=bs_step)
+    
+    tuf_min = cfg.optuna.target_update_frequency_range[0]
+    tuf_max = cfg.optuna.target_update_frequency_range[1]
+    tuf_step = cfg.optuna.tuf_step
+    target_update_frequency = trial.suggest_int('target_update_frequency', tuf_min, tuf_max, step=tuf_step)
 
     loss_fn = nn.MSELoss()
     #loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
@@ -337,7 +343,8 @@ def objective(trial, cfg):
               "lr": lr, 
               "bs": batch_size,
               "loss_fn": loss_fn,
-              "model_storage_path": model_storage_path
+              "model_storage_path": model_storage_path,
+              "target_update_frequency": target_update_frequency
               }
 
     #Data
