@@ -196,6 +196,7 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
 
     #Data
     model_path = params["model_storage_path"] #for saving
+    best_model_path = params["best_model_storage_path"]
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     #min_loss = float('inf')
@@ -207,6 +208,7 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
 
     #Training loop
     step = 0
+    best_ba = 0.0
     targetModel = copy.deepcopy(model)
     targetModel.eval()
     targetModel.to(device=params["device"])
@@ -243,7 +245,6 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
                 targetModel = copy.deepcopy(model)
                 targetModel.eval()
                 targetModel.to(device=params["device"])
-                print(f"Step: {step} targetModel updated")
         if (epoch + 1) % cfg.eval_frequency == 0:
             val_loss, conf_mx = eval(model, valDataLoader, params["loss_fn"])
             trial.report(-val_loss, epoch)
@@ -257,6 +258,13 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
                             "Elapsed Time Minutes": elapsed_time
                             }
             wb_run.log(wandb_report)
+            if BA >= best_ba:
+                torch.save(model.state_dict(), best_model_path)
+                wb_run.summary["Best BA"] = BA
+                wb_run.summary["Best Epoch"] = epoch
+                best_ba = BA
+                
+
             
         #print("Epoch {} complete with avg train loss {}".format(epoch, running_avg))
         #train_loss_list.append(running_avg)
@@ -295,6 +303,84 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
     return model
 
 
+def single_objective(trial, cfg):
+    print("Entered Single Objective")
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_name = f"trial_{trial.number}_{current_time}"
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    model_storage_dir = cfg.single_run.model_storage_dir
+    study_name = cfg.single_run.study_name
+    model_storage_dir = os.path.join(model_storage_dir, study_name)
+    os.makedirs(model_storage_dir, exist_ok=True)
+    model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}.pth".format(study_name, trial.number))
+    best_model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}_best.pth".format(study_name, trial.number))
+
+    #initialize hyperparameters with optuna from config ranges
+    n_layers = cfg.single_run.n_layers
+    trial.suggest_int('n_layers', n_layers, n_layers)
+
+
+    hidden_sizes = cfg.single_run.hidden_sizes
+    for i in range(n_layers):
+        trial.suggest_int('neurons_layer_{}'.format(i), hidden_sizes[i], hidden_sizes[i])
+
+    lr = cfg.single_run.lr
+    trial.suggest_float('lr', lr, lr)
+
+    batch_size = cfg.single_run.bs
+    trial.suggest_int('bs', batch_size, batch_size)
+    
+    target_update_frequency = cfg.single_run.target_update_frequency
+    trial.suggest_int('target_update_frequency', target_update_frequency , target_update_frequency)
+
+    loss_fn = nn.MSELoss()
+    #loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+    params = {"n_layers": n_layers, 
+              "hidden_sizes": hidden_sizes, 
+              "lr": lr, 
+              "bs": batch_size,
+              "loss_fn": loss_fn,
+              "model_storage_path": model_storage_path,
+              "best_model_storage_path": best_model_storage_path,
+              "target_update_frequency": target_update_frequency
+              }
+
+    #Data
+    trainList, valList, _ = get_episode_data(cfg.path, cfg.train_val_test_split)
+    valData = get_val_data(valList, cfg).to(device=device)
+    valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
+    valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True)
+
+    #training
+    input_size = trainList[0].size(dim=1)
+    myModel = GoalNet(input_size, hidden_sizes).to(device=device)
+
+    params["input_size"] = input_size
+    params["trial_number"] = trial.number
+
+    wb_config = OmegaConf.to_container(cfg)
+    wb_config["params"] = params
+    wandb_kwargs = {
+        "entity": cfg.wandb.entity,
+        "project": cfg.wandb.project,
+        "config": wb_config,
+        "name": run_name
+        }
+    wb_run = wandb.init(**wandb_kwargs)
+    #trainedModel = train_td(trial, myModel, trainList, valDataLoader, cfg, params)
+    params["device"] = device
+    trainedModel = train_td_new(trial, wb_run, myModel, trainList, valDataLoader, cfg, params)
+    final_loss, conf_mx = eval(trainedModel, valDataLoader, loss_fn)
+    BA = get_ba_from_conf(*conf_mx.ravel())
+
+    wb_run.summary["Final BA"] = BA
+    wb_run.summary["Final eval loss"] = final_loss
+    wb_run.finish()
+    
+    return BA
 
 def objective(trial, cfg):
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -307,7 +393,7 @@ def objective(trial, cfg):
     model_storage_dir = os.path.join(model_storage_dir, study_name)
     os.makedirs(model_storage_dir, exist_ok=True)
     model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}.pth".format(study_name, trial.number))
-    print("model_storage_path: ", model_storage_path)
+    best_model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}_best.pth".format(study_name, trial.number))
 
     #initialize hyperparameters with optuna from config ranges
     n_layers_min = cfg.optuna.n_layers_range[0]
@@ -344,6 +430,7 @@ def objective(trial, cfg):
               "bs": batch_size,
               "loss_fn": loss_fn,
               "model_storage_path": model_storage_path,
+              "best_model_storage_path": best_model_storage_path,
               "target_update_frequency": target_update_frequency
               }
 
@@ -393,7 +480,14 @@ def run(cfg):
     #     }
     #wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)
     wandb.login()
-    partial_objective = partial(objective,  cfg=cfg)
+    if cfg.mode == "sweep":
+        partial_objective = partial(objective,  cfg=cfg)
+    elif cfg.mode == "single_run":
+        partial_objective = partial(single_objective, cfg=cfg)
+    else:
+        message = f"cfg.mode {cfg.mode} is not implemented."
+        raise ValueError(message)
+
     #wandbc_decorator = wandbc.track_in_wandb()
     #decorated_objective = wandbc_decorator(partial_objective)
 

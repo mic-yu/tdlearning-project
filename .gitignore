@@ -8,6 +8,7 @@ databases/
 models/
 outputs/
 data/
+sweeps/
 
 databasestest.db
 playground.py

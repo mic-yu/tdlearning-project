@@ -1,3 +1,4 @@
+mode: "single_run" #or "sweep"
 path: "./data/n_eps-100-env-base_agent_env_2025-08-13_16-12-02.pkl" #training data path
 max_k: 10
 train_val_test_split: [0.6, 0.2, 0.2]
@@ -10,25 +11,40 @@ train_loss_frequency: 1000 #Report running avg loss after this inteverval of ste
 loss_fn: "MSE"
 optimizer: "Adam"
 
+wandb:
+  entity: "dpinchuk-university-of-wisconsin-madison"
+  project: "tdgoal_h10_test" #"td_test"
+
 optuna:
   n_layers_range: [1, 5]
   num_neurons_range: [8, 64] #number of neurons in each layer
   bs_range: [32, 512] #batch size range
   bs_step: 32
   lr_range: [1e-5, 1e-2]
-  target_update_frequency_range: [1000, 10000] #steps. Epoch atomatically adjusted with batch size
+  target_update_frequency_range: [1000, 10000] #steps. 
   tuf_step: 1000
 
-  study_name: "tdgoal_h10_test"
+  study_name: "test_test"
   model_storage_dir: "models"
   db_dir: "databases"
-  db_name: "tdgoal.db"
+  db_name: "tdgoal_test_test.db"
 
   num_trials: 1
   n_startup_trials: 10
 
-wandb:
-  entity: "dpinchuk-university-of-wisconsin-madison"
-  project: "tdgoal_h10_test" #"td_test"
+single_run:
+  n_layers: 2 #hidden layers
+  hidden_sizes: [8, 64] #number of neurons in each layer
+  bs:  200
+  lr: 3e-3
+  target_update_frequency: 9000 #steps. 
+
+  study_name: "test"
+  model_storage_dir: "models"
+  db_dir: "databases"
+  db_name: "test.db"
+
+  num_trials: 1
+  n_startup_trials: 10
 
 
