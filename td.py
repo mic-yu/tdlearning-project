@@ -304,14 +304,13 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
 
 
 def single_objective(trial, cfg):
-    print("Entered Single Objective")
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_name = f"trial_{trial.number}_{current_time}"
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model_storage_dir = cfg.single_run.model_storage_dir
-    study_name = cfg.single_run.study_name
+    model_storage_dir = cfg.optuna_settings.model_storage_dir
+    study_name = cfg.optuna_settings.study_name
     model_storage_dir = os.path.join(model_storage_dir, study_name)
     os.makedirs(model_storage_dir, exist_ok=True)
     model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}.pth".format(study_name, trial.number))
@@ -378,9 +377,10 @@ def single_objective(trial, cfg):
 
     wb_run.summary["Final BA"] = BA
     wb_run.summary["Final eval loss"] = final_loss
+    best_ba = wb_run.summary["Best BA"]
     wb_run.finish()
     
-    return BA
+    return best_ba
 
 def objective(trial, cfg):
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -388,8 +388,8 @@ def objective(trial, cfg):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model_storage_dir = cfg.optuna.model_storage_dir
-    study_name = cfg.optuna.study_name
+    model_storage_dir = cfg.optuna_settings.model_storage_dir
+    study_name = cfg.optuna_settings.study_name
     model_storage_dir = os.path.join(model_storage_dir, study_name)
     os.makedirs(model_storage_dir, exist_ok=True)
     model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}.pth".format(study_name, trial.number))
@@ -464,9 +464,10 @@ def objective(trial, cfg):
 
     wb_run.summary["Final BA"] = BA
     wb_run.summary["Final eval loss"] = final_loss
+    best_ba = wb_run.summary["Best BA"]
     wb_run.finish()
     
-    return BA
+    return best_ba
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def run(cfg):
@@ -491,17 +492,17 @@ def run(cfg):
     #wandbc_decorator = wandbc.track_in_wandb()
     #decorated_objective = wandbc_decorator(partial_objective)
 
-    study_name = cfg.optuna.study_name
-    model_storage_dir = cfg.optuna.model_storage_dir
-    num_trials = cfg.optuna.num_trials
-    db_dir = cfg.optuna.db_dir
+    study_name = cfg.optuna_settings.study_name
+    model_storage_dir = cfg.optuna_settings.model_storage_dir
+    num_trials = cfg.optuna_settings.num_trials
+    db_dir = cfg.optuna_settings.db_dir
     os.makedirs(db_dir, exist_ok=True)
-    db_name = cfg.optuna.db_name
+    db_name = cfg.optuna_settings.db_name
     db_path = os.path.join("sqlite:///", db_dir, db_name)
     print("db_path: ", db_path)
 
     os.makedirs(model_storage_dir, exist_ok=True)
-    n_startup_trials = cfg.optuna.n_startup_trials
+    n_startup_trials = cfg.optuna_settings.n_startup_trials
     study = optuna.create_study(direction="maximize",
                 pruner=optuna.pruners.MedianPruner(n_startup_trials=n_startup_trials, n_warmup_steps=50, interval_steps=1), 
                 study_name=study_name, 
