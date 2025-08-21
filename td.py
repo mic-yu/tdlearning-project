@@ -270,38 +270,100 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
         #print("Epoch {} complete with avg train loss {}".format(epoch, running_avg))
         #train_loss_list.append(running_avg)
 
-        #Evaluation loop and early stopping
-        '''
-        if (epoch + 1) % 5 == 0:
-            val_loss, _ = eval(model, valDataLoader, loss_fn)
-            trial.report(-val_loss, epoch)
-            print("Epoch {} complete with avg val loss {}".format(epoch, val_loss))
-            if val_loss < min_loss:
-                min_loss = val_loss
-                torch.save(model.state_dict(), model_path)
-                patience_counter = 0
-            if trial.should_prune():
-                #trial.set_user_attr("pruned", True)
-                model.load_state_dict(torch.load(model_path, weights_only=True))
-                _, conf_mx = eval(model, valDataLoader, loss_fn)
-                BA = get_ba_from_conf(*conf_mx.ravel())
-                trial.report(BA, epoch + 1)
-                trial.set_user_attr("epochs_trained", epoch + 1)
-                raise optuna.TrialPruned()
-            else:
-                patience_counter += 1
-                if patience_counter > patience:
-                    trial.set_user_attr("epochs_trained", epoch + 1)
-                    model.load_state_dict(torch.load(model_path, weights_only=True))
-                    return model 
-        '''
-    '''
-    trial.set_user_attr("epochs_trained", epoch+1)
-    '''
+
 
     #model_path = model_storage_path + "/{}_trial_{}".format(study_name, trial.number)
     torch.save(model.state_dict(), model_path)
     return model
+
+def wandb_sweep_objective(hydra_cfg):
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_name = current_time 
+
+    wb_config = OmegaConf.to_container(hydra_cfg)
+    #wb_config["params"] = params
+    wandb_kwargs = {
+        "entity": hydra_cfg.wandb.entity,
+        "project": hydra_cfg.wandb.project,
+        }
+    wb_run = wandb.init(**wandb_kwargs)
+    #"name": run_name
+    wb_run.name = current_time + "_" + wb_run.id
+
+
+    param_config = wandb.config
+   
+
+
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    model_storage_dir = hydra_cfg.model_storage_dir
+    sweep_name = hydra_cfg.wandb_sweep.name
+    model_storage_dir = os.path.join(model_storage_dir, sweep_name)
+    os.makedirs(model_storage_dir, exist_ok=True)
+    model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}.pth".format(sweep_name, run_name))
+    best_model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}_best.pth".format(sweep_name, run_name))
+
+    #initialize hyperparameters
+    n_layers = hydra_cfg.wandb_sweep.n_layers
+    hidden_sizes = []
+    for i in range(n_layers):
+        hidden_sizes.append(param_config[f"neurons_layer_{i}"])
+    lr = param_config["lr"]
+    batch_size = param_config["bs"]  
+    target_update_frequency = param_config["target_update_frequency"]
+
+
+    loss_fn = nn.MSELoss()
+    #loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+    params = {"n_layers": n_layers, 
+              "hidden_sizes": hidden_sizes, 
+              "lr": lr, 
+              "bs": batch_size,
+              "loss_fn": loss_fn,
+              "model_storage_path": model_storage_path,
+              "best_model_storage_path": best_model_storage_path,
+              "target_update_frequency": target_update_frequency
+              }
+
+    #Data
+    trainList, valList, _ = get_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split)
+    valData = get_val_data(valList, hydra_cfg).to(device=device)
+    valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
+    valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True)
+
+    #training
+    input_size = trainList[0].size(dim=1)
+    myModel = GoalNet(input_size, hidden_sizes).to(device=device)
+
+    params["input_size"] = input_size
+    #params["trial_number"] = trial.number
+    
+    wb_run.config.update({"hydra_config": OmegaConf.to_container(hydra_cfg), "params": params})
+
+    # wb_config = OmegaConf.to_container(hydra_cfg)
+    # wb_config["params"] = params
+    # wandb_kwargs = {
+    #     "entity": hydra_cfg.wandb.entity,
+    #     "project": hydra_cfg.wandb.project,
+    #     "config": wb_config,
+    #     "name": run_name
+    #     }
+    # wb_run = wandb.init(**wandb_kwargs)
+    #trainedModel = train_td(trial, myModel, trainList, valDataLoader, cfg, params)
+    params["device"] = device
+    trainedModel = train_td_new(None, wb_run, myModel, trainList, valDataLoader, hydra_cfg, params)
+    final_loss, conf_mx = eval(trainedModel, valDataLoader, loss_fn)
+    BA = get_ba_from_conf(*conf_mx.ravel())
+
+    wb_run.summary["Final BA"] = BA
+    wb_run.summary["Final eval loss"] = final_loss
+    best_ba = wb_run.summary["Best BA"]
+    wb_run.finish()
+    
+    return best_ba
 
 
 def single_objective(cfg, trial=None):
@@ -310,7 +372,7 @@ def single_objective(cfg, trial=None):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model_storage_dir = cfg.optuna_settings.model_storage_dir
+    model_storage_dir = cfg.model_storage_dir
     study_name = cfg.optuna_settings.study_name
     model_storage_dir = os.path.join(model_storage_dir, study_name)
     os.makedirs(model_storage_dir, exist_ok=True)
@@ -387,7 +449,7 @@ def objective(trial, cfg):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model_storage_dir = cfg.optuna_settings.model_storage_dir
+    model_storage_dir = cfg.model_storage_dir
     study_name = cfg.optuna_settings.study_name
     model_storage_dir = os.path.join(model_storage_dir, study_name)
     os.makedirs(model_storage_dir, exist_ok=True)
@@ -485,8 +547,12 @@ def run(cfg):
     elif cfg.mode == "single_run":
         partial_objective = partial(single_objective, cfg=cfg)
     elif cfg.mode == "wandb_sweep":
-        partial_function = partial(single_objective, cfg=cfg)
-        wandb.agent(sweep_id = cfg.wandb_sweep.sweep_id, function=partial_function, count=1)
+        partial_function = partial(wandb_sweep_objective, hydra_cfg=cfg)
+        wandb.agent(sweep_id = cfg.wandb_sweep.sweep_id, 
+                    function=partial_function,
+                    entity=cfg.wandb.entity,
+                    project=cfg.wandb.project,
+                    count=1)
     else:
         message = f"cfg.mode {cfg.mode} is not implemented."
         raise ValueError(message)
@@ -494,23 +560,26 @@ def run(cfg):
     #wandbc_decorator = wandbc.track_in_wandb()
     #decorated_objective = wandbc_decorator(partial_objective)
 
-    study_name = cfg.optuna_settings.study_name
-    model_storage_dir = cfg.optuna_settings.model_storage_dir
-    num_trials = cfg.optuna_settings.num_trials
-    db_dir = cfg.optuna_settings.db_dir
-    os.makedirs(db_dir, exist_ok=True)
-    db_name = cfg.optuna_settings.db_name
-    db_path = os.path.join("sqlite:///", db_dir, db_name)
-    print("db_path: ", db_path)
-
+    model_storage_dir = cfg.model_storage_dir
     os.makedirs(model_storage_dir, exist_ok=True)
-    n_startup_trials = cfg.optuna_settings.n_startup_trials
-    study = optuna.create_study(direction="maximize",
-                pruner=optuna.pruners.MedianPruner(n_startup_trials=n_startup_trials, n_warmup_steps=50, interval_steps=1), 
-                study_name=study_name, 
-                storage=db_path, 
-                load_if_exists=True)
-    study.optimize(partial_objective, n_trials=num_trials, n_jobs=1) # callbacks=[wandbc])
+    
+    if cfg.mode != "wandb_sweep":
+        study_name = cfg.optuna_settings.study_name
+        num_trials = cfg.optuna_settings.num_trials
+        db_dir = cfg.optuna_settings.db_dir
+        os.makedirs(db_dir, exist_ok=True)
+        db_name = cfg.optuna_settings.db_name
+        db_path = os.path.join("sqlite:///", db_dir, db_name)
+        print("db_path: ", db_path)
+
+        
+        n_startup_trials = cfg.optuna_settings.n_startup_trials
+        study = optuna.create_study(direction="maximize",
+                    pruner=optuna.pruners.MedianPruner(n_startup_trials=n_startup_trials, n_warmup_steps=50, interval_steps=1), 
+                    study_name=study_name, 
+                    storage=db_path, 
+                    load_if_exists=True)
+        study.optimize(partial_objective, n_trials=num_trials, n_jobs=1) # callbacks=[wandbc])
 
 
 if __name__ == '__main__':
