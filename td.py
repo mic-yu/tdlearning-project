@@ -247,7 +247,8 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
                 targetModel.to(device=params["device"])
         if (epoch + 1) % cfg.eval_frequency == 0:
             val_loss, conf_mx = eval(model, valDataLoader, params["loss_fn"])
-            trial.report(-val_loss, epoch)
+            if trial is not None:
+                trial.report(-val_loss, epoch)
             BA = get_ba_from_conf(*conf_mx.ravel())
             elapsed_time = (time.time() - start_time) / 60
             wandb_report = {"epoch": epoch,
@@ -303,7 +304,7 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
     return model
 
 
-def single_objective(trial, cfg):
+def single_objective(cfg, trial=None):
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_name = f"trial_{trial.number}_{current_time}"
 
@@ -316,23 +317,21 @@ def single_objective(trial, cfg):
     model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}.pth".format(study_name, trial.number))
     best_model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}_best.pth".format(study_name, trial.number))
 
-    #initialize hyperparameters with optuna from config ranges
+    #initialize hyperparameters
     n_layers = cfg.single_run.n_layers
-    trial.suggest_int('n_layers', n_layers, n_layers)
-
-
     hidden_sizes = cfg.single_run.hidden_sizes
-    for i in range(n_layers):
-        trial.suggest_int('neurons_layer_{}'.format(i), hidden_sizes[i], hidden_sizes[i])
-
     lr = cfg.single_run.lr
-    trial.suggest_float('lr', lr, lr)
-
-    batch_size = cfg.single_run.bs
-    trial.suggest_int('bs', batch_size, batch_size)
-    
+    batch_size = cfg.single_run.bs    
     target_update_frequency = cfg.single_run.target_update_frequency
-    trial.suggest_int('target_update_frequency', target_update_frequency , target_update_frequency)
+
+    #log hyperparameters to optuna.
+    if trial is not None:
+        trial.suggest_int('n_layers', n_layers, n_layers)
+        for i in range(n_layers):
+            trial.suggest_int('neurons_layer_{}'.format(i), hidden_sizes[i], hidden_sizes[i])
+        trial.suggest_float('lr', lr, lr)
+        trial.suggest_int('bs', batch_size, batch_size)
+        trial.suggest_int('target_update_frequency', target_update_frequency , target_update_frequency)
 
     loss_fn = nn.MSELoss()
     #loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
@@ -396,29 +395,29 @@ def objective(trial, cfg):
     best_model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}_best.pth".format(study_name, trial.number))
 
     #initialize hyperparameters with optuna from config ranges
-    n_layers_min = cfg.optuna.n_layers_range[0]
-    n_layers_max = cfg.optuna.n_layers_range[1]
+    n_layers_min = cfg.search_space.n_layers_range[0]
+    n_layers_max = cfg.search_space.n_layers_range[1]
     n_layers = trial.suggest_int('n_layers', n_layers_min, n_layers_max)
 
-    num_neurons_min = cfg.optuna.num_neurons_range[0]
-    num_neurons_max = cfg.optuna.num_neurons_range[1]
+    num_neurons_min = cfg.search_space.num_neurons_range[0]
+    num_neurons_max = cfg.search_space.num_neurons_range[1]
     hidden_sizes = []
     for i in range(n_layers):
         num_neurons = trial.suggest_int('neurons_layer_{}'.format(i), num_neurons_min, num_neurons_max)
         hidden_sizes.append(num_neurons)
 
-    lr_min = cfg.optuna.lr_range[0]
-    lr_max = cfg.optuna.lr_range[1]
+    lr_min = cfg.search_space.lr_range[0]
+    lr_max = cfg.search_space.lr_range[1]
     lr = trial.suggest_float('lr', lr_min, lr_max, log=True)
 
-    bs_min = cfg.optuna.bs_range[0]
-    bs_max = cfg.optuna.bs_range[1]
-    bs_step = cfg.optuna.bs_step
+    bs_min = cfg.search_space.bs_range[0]
+    bs_max = cfg.search_space.bs_range[1]
+    bs_step = cfg.search_space.bs_step
     batch_size = trial.suggest_int('bs', bs_min, bs_max, step=bs_step)
     
-    tuf_min = cfg.optuna.target_update_frequency_range[0]
-    tuf_max = cfg.optuna.target_update_frequency_range[1]
-    tuf_step = cfg.optuna.tuf_step
+    tuf_min = cfg.search_space.target_update_frequency_range[0]
+    tuf_max = cfg.search_space.target_update_frequency_range[1]
+    tuf_step = cfg.search_space.tuf_step
     target_update_frequency = trial.suggest_int('target_update_frequency', tuf_min, tuf_max, step=tuf_step)
 
     loss_fn = nn.MSELoss()
@@ -485,6 +484,9 @@ def run(cfg):
         partial_objective = partial(objective,  cfg=cfg)
     elif cfg.mode == "single_run":
         partial_objective = partial(single_objective, cfg=cfg)
+    elif cfg.mode == "wandb_sweep":
+        partial_function = partial(single_objective, cfg=cfg)
+        wandb.agent(sweep_id = cfg.wandb_sweep.sweep_id, function=partial_function, count=1)
     else:
         message = f"cfg.mode {cfg.mode} is not implemented."
         raise ValueError(message)

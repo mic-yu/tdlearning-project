@@ -1,8 +1,8 @@
-mode: "single_run" #or "sweep"
+mode: "wandb_sweep" #or "single_run" #or "sweep"
 path: "./data/n_eps-100-env-base_agent_env_2025-08-13_16-12-02.pkl" #training data path
-max_k: 100
+max_k: 10
 train_val_test_split: [0.6, 0.2, 0.2]
-num_epochs: 200
+num_epochs: 5
 train_forward_sig: True #Manually pass outputs of model during training through a sigmoid layer inside script. 
                         #It is always turned off for the model.
 eval_frequency: 5 #Evaluation will happen every eval_frequency epochs during training
@@ -12,7 +12,12 @@ optimizer: "Adam"
 
 wandb:
   entity: "dpinchuk-university-of-wisconsin-madison"
-  project: "tdgoal_h100_ep100" #"td_test"
+  project: "test_sweep_2" #"td_test"
+
+wandb_sweep:
+  name: "test_2"
+  n_layers: 5
+  sweep_id: "mafqd799"
 
 optuna_settings:
   study_name: "tdgoal_h100_ep100_epoch200"
@@ -23,7 +28,7 @@ optuna_settings:
   num_trials: 1
   n_startup_trials: 10
 
-optuna:
+search_space:
   n_layers_range: [1, 5]
   num_neurons_range: [8, 64] #number of neurons in each layer
   bs_range: [32, 512] #batch size range
