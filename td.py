@@ -292,7 +292,7 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
 
 def wandb_sweep_objective(hydra_cfg):
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_name = current_time 
+    #run_name = current_time 
 
     wb_config = OmegaConf.to_container(hydra_cfg)
     #wb_config["params"] = params
@@ -303,6 +303,7 @@ def wandb_sweep_objective(hydra_cfg):
     wb_run = wandb.init(**wandb_kwargs)
     #"name": run_name
     wb_run.name = current_time + "_" + wb_run.id
+    run_name = wb_run.name
 
 
     param_config = wandb.config
