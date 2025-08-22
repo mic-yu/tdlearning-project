@@ -16,9 +16,9 @@ wandb:
   project: "test_sweep_2" #"td_test"
 
 wandb_sweep:
-  name: "test_2"
+  name: "test_4"
   n_layers: 5
-  sweep_id: "mafqd799"
+  sweep_id: "pvf8ivxa"
 
 optuna_settings:
   study_name: "tdgoal_h100_ep100_epoch200"

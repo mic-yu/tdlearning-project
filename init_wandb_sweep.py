@@ -36,7 +36,7 @@ def run(cfg):
         "metric": {"goal": "maximize", "name": "val_ba"},
         "parameters": parameters
     }
-
+    
     sweep_id = wandb.sweep(sweep=sweep_configuration)
     print("sweep_id: ", sweep_id)
 

@@ -9,6 +9,7 @@ models/
 outputs/
 data/
 sweeps/
+artifact_download_test/
 
 databasestest.db
 playground.py

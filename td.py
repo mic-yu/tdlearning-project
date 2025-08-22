@@ -274,6 +274,20 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
 
     #model_path = model_storage_path + "/{}_trial_{}".format(study_name, trial.number)
     torch.save(model.state_dict(), model_path)
+
+    fma_name = wb_run.name + "_" + "final_model"
+    final_model_artifact = wandb.Artifact(name=fma_name, type="model")
+
+    bma_name = wb_run.name + "_" + "best_model"
+    best_model_artifact = wandb.Artifact(name=bma_name, type="model")
+
+    final_model_artifact.add_file(local_path=model_path)
+    best_model_artifact.add_file(local_path=best_model_path)
+
+    wb_run.log_artifact(final_model_artifact)
+    wb_run.log_artifact(best_model_artifact)
+    
+
     return model
 
 def wandb_sweep_objective(hydra_cfg):
