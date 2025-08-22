@@ -1,6 +1,7 @@
 mode: "wandb_sweep" #or "single_run" #or "sweep"
 path: "./data/n_eps-100-env-base_agent_env_2025-08-13_16-12-02.pkl" #training data path
 model_storage_dir: "models"
+chtc: True
 max_k: 10
 train_val_test_split: [0.6, 0.2, 0.2]
 num_epochs: 5

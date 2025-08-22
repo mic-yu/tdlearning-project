@@ -314,8 +314,8 @@ def wandb_sweep_objective(hydra_cfg):
 
     model_storage_dir = hydra_cfg.model_storage_dir
     sweep_name = hydra_cfg.wandb_sweep.name
-    #model_storage_dir = os.path.join(model_storage_dir, sweep_name)
-    model_storage_dir = model_storage_dir + "_" + sweep_name
+    if hydra_cfg.chtc == False:
+        model_storage_dir = os.path.join(model_storage_dir, sweep_name)
     os.makedirs(model_storage_dir, exist_ok=True)
     model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}.pth".format(sweep_name, run_name))
     best_model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}_best.pth".format(sweep_name, run_name))
