@@ -208,7 +208,7 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
 
     #Training loop
     step = 0
-    best_ba = 0.0
+    best_val_ba = 0.0
     targetModel = copy.deepcopy(model)
     targetModel.eval()
     targetModel.to(device=params["device"])
@@ -251,19 +251,20 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
                 trial.report(-val_loss, epoch)
             BA = get_ba_from_conf(*conf_mx.ravel())
             elapsed_time = (time.time() - start_time) / 60
-            wandb_report = {"epoch": epoch,
-                            "optimization step": step,
-                            "train/loss": running_avg,
-                            "validation/loss": val_loss,
-                            "validation/Balanced Accuracy": BA,
-                            "Elapsed Time Minutes": elapsed_time
-                            }
-            wb_run.log(wandb_report)
-            if BA >= best_ba:
+            if BA >= best_val_ba:
                 torch.save(model.state_dict(), best_model_path)
                 wb_run.summary["Best BA"] = BA
                 wb_run.summary["Best Epoch"] = epoch
-                best_ba = BA
+                best_val_ba = BA
+            wandb_report = {"epoch": epoch,
+                "optimization step": step,
+                "train/loss": running_avg,
+                "validation/loss": val_loss,
+                "validation/Balanced Accuracy": BA,
+                "Elapsed Time Minutes": elapsed_time,
+                "best_val_ba": best_val_ba
+                }
+            wb_run.log(wandb_report)
                 
 
             
@@ -376,10 +377,10 @@ def wandb_sweep_objective(hydra_cfg):
 
     wb_run.summary["Final BA"] = BA
     wb_run.summary["Final eval loss"] = final_loss
-    best_ba = wb_run.summary["Best BA"]
+    best_val_ba = wb_run.summary["Best BA"]
     wb_run.finish()
     
-    return best_ba
+    return best_val_ba
 
 
 def single_objective(cfg, trial=None):
@@ -454,10 +455,10 @@ def single_objective(cfg, trial=None):
 
     wb_run.summary["Final BA"] = BA
     wb_run.summary["Final eval loss"] = final_loss
-    best_ba = wb_run.summary["Best BA"]
+    best_val_ba = wb_run.summary["Best BA"]
     wb_run.finish()
     
-    return best_ba
+    return best_val_ba
 
 def objective(trial, cfg):
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -541,10 +542,10 @@ def objective(trial, cfg):
 
     wb_run.summary["Final BA"] = BA
     wb_run.summary["Final eval loss"] = final_loss
-    best_ba = wb_run.summary["Best BA"]
+    best_val_ba = wb_run.summary["Best BA"]
     wb_run.finish()
     
-    return best_ba
+    return best_val_ba
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def run(cfg):
