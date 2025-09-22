@@ -332,8 +332,14 @@ def wandb_sweep_objective(hydra_cfg):
     target_update_frequency = param_config["target_update_frequency"]
 
 
-    loss_fn = nn.MSELoss()
-    #loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    if hydra_cfg.loss_fn == "MSE":
+        loss_fn = nn.MSELoss()
+    elif hydra_cfg.loss_fn == "BCE":
+        loss_fn = nn.BCEWithLogitsLoss()
+    else:
+        loss_fn = None
+        message = f"cfg.loss_fn {hydra_cfg.loss_fn} is not implemented."
+        raise ValueError(message)
 
     params = {"n_layers": n_layers, 
               "hidden_sizes": hidden_sizes, 
@@ -412,8 +418,14 @@ def single_objective(cfg, trial=None):
         trial.suggest_int('bs', batch_size, batch_size)
         trial.suggest_int('target_update_frequency', target_update_frequency , target_update_frequency)
 
-    loss_fn = nn.MSELoss()
-    #loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    if cfg.loss_fn == "MSE":
+        loss_fn = nn.MSELoss()
+    elif cfg.loss_fn == "BCE":
+        loss_fn = nn.BCEWithLogitsLoss()
+    else:
+        loss_fn = None
+        message = f"cfg.loss_fn {cfg.loss_fn} is not implemented."
+        raise ValueError(message)
 
     params = {"n_layers": n_layers, 
               "hidden_sizes": hidden_sizes, 
@@ -499,8 +511,14 @@ def objective(trial, cfg):
     tuf_step = cfg.search_space.tuf_step
     target_update_frequency = trial.suggest_int('target_update_frequency', tuf_min, tuf_max, step=tuf_step)
 
-    loss_fn = nn.MSELoss()
-    #loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    if cfg.loss_fn == "MSE":
+        loss_fn = nn.MSELoss()
+    elif cfg.loss_fn == "BCE":
+        loss_fn = nn.BCEWithLogitsLoss()
+    else:
+        loss_fn = None
+        message = f"cfg.loss_fn {cfg.loss_fn} is not implemented."
+        raise ValueError(message)
 
     params = {"n_layers": n_layers, 
               "hidden_sizes": hidden_sizes, 

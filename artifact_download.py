@@ -4,29 +4,28 @@ import torch
 
 from GoalNet import GoalNet
 
-api = wandb.Api()
-artifact = api.artifact("dpinchuk-university-of-wisconsin-madison/test_sweep_2/2025-08-22_13-49-17_5whgz1n6_final_model:v0")
-directory = "./artifact_download_test/"
-os.makedirs(directory, exist_ok=True)
-path = artifact.download(root=directory)
-
-model_path = os.path.join(path, "test_4_trial_2025-08-22_13-49-17.pth")
+def download_model(artifact_name, download_folder):
+    api = wandb.Api()
+    artifact = api.artifact(artifact_name)
+    os.makedirs(download_folder, exist_ok=True)
+    artifact.download(root=download_folder)
 
 
-run_path = "dpinchuk-university-of-wisconsin-madison/test_sweep_2/5whgz1n6"
-run = api.run(run_path)
+def load_wandb_model(run_path, model_path, device):
+    run = wandb.Api().run(run_path)
 
-input_size = 9
-hidden_sizes = []
-n_layers = run.config["params"]["n_layers"]
-for i in range(n_layers):
-    hidden_sizes.append(run.config[f"neurons_layer_{i}"])
+    input_size = 9
+    hidden_sizes = []
+    n_layers = run.config["params"]["n_layers"]
+    for i in range(n_layers):
+        hidden_sizes.append(run.config[f"neurons_layer_{i}"])
 
-model = GoalNet(input_size, hidden_sizes)
-model.load_state_dict(torch.load(model_path, weights_only=True))
-model.eval()
-with torch.no_grad():
-    y = model(torch.tensor([1,2,3,4,5,6,7,8,9]) / 9)
-print("y: ", y)
-print("complete")
-#print("path: ", path)
+    model = GoalNet(input_size, hidden_sizes)
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    return model
+
+
+if __name__ == '__main__':
+    artifact_name = "dpinchuk-university-of-wisconsin-madison/tdgoal_h100_ep500_epoch200/2025-08-27_16-10-28_pv5kiybp_best_model:v0"
+    download_folder = "./artifact_download/"
+    #download_model(artifact_name, download_folder)
