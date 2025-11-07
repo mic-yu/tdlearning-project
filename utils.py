@@ -133,8 +133,8 @@ def preprocess_abs_dataset(data):
     field_half_width = 4500
     data[:, :4] = data[:, :4] / field_half_width #normalize
     rad_angle = torch.deg2rad(data[:, 4])
-    cos_face_angle = torch.cos(rad_angle)
-    sin_face_angle = torch.sin(rad_angle)
+    cos_face_angle = torch.unsqueeze(torch.cos(rad_angle), 1)
+    sin_face_angle = torch.unsqueeze(torch.sin(rad_angle), 1)
     data = torch.cat((data[:4], cos_face_angle, sin_face_angle, data[:, 5:]), dim=1)
     return data
 

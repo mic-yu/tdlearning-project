@@ -5,11 +5,11 @@ chtc: True
 max_k: 100
 train_val_test_split: [0.6, 0.2, 0.2]
 num_epochs: 200
-train_forward_sig: True #Manually pass outputs of model during training through a sigmoid layer inside script. 
+train_forward_sig: False #Manually pass outputs of model during training through a sigmoid layer inside script. 
                         #It is always turned off for the model.
 eval_frequency: 5 #Evaluation will happen every eval_frequency epochs during training
 train_loss_frequency: 1000 #Report running avg loss after this inteverval of steps
-loss_fn: "MSE"
+loss_fn: "BCE"
 optimizer: "Adam"
 
 wandb:
@@ -17,9 +17,9 @@ wandb:
   project: "td_abs" #"td_test"
 
 wandb_sweep:
-  name: "test_4"
+  name: "ep_100_abs_l5_BCE"
   n_layers: 5
-  sweep_id: "pvf8ivxa"
+  sweep_id: "yksqcu3i"
 
 optuna_settings:
   study_name: "tdgoal_h100_ep100_epoch200"
