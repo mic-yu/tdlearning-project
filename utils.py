@@ -135,7 +135,7 @@ def preprocess_abs_dataset(data):
     rad_angle = torch.deg2rad(data[:, 4])
     cos_face_angle = torch.unsqueeze(torch.cos(rad_angle), 1)
     sin_face_angle = torch.unsqueeze(torch.sin(rad_angle), 1)
-    data = torch.cat((data[:4], cos_face_angle, sin_face_angle, data[:, 5:]), dim=1)
+    data = torch.cat((data[:, :4], cos_face_angle, sin_face_angle, data[:, 5:]), dim=1)
     return data
 
 def get_pos_weight(dataset):
