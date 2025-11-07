@@ -267,7 +267,7 @@ if __name__ == "__main__":
     #     delta = [dx, 0]
     #     plot_agent_near_ball_td(model, iso_reg, delta, 100, agent_z=0, scale=10)
     
-    delta = [100, 0]
+    delta = [1000, 0]
     plot_agent_near_ball_td(model, iso_reg, delta, 100, agent_z=0, scale=10)
 
 

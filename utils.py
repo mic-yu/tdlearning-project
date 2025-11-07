@@ -1,9 +1,12 @@
+import sys
 import math
 import torch
 import pickle
 import numpy as np
 import optuna
 from torch.utils.data import TensorDataset
+
+np.set_printoptions(threshold=sys.maxsize)
 
 
 
@@ -17,24 +20,28 @@ def load_data_tensors(path, train_val_test_split, horizon=None):
         horizon (int): Used to label probability of scoring in the next horizon states from a given state.
 
     Returns: 
-        list: List of 3 torch tensors corresponding to train, val, test datasets.
+        list: List of 3 torch tensors corresponding to train, val, test datasets
     """
-    
+    print("Entered load data tensors")
     assert sum(train_val_test_split) == 1
 
     with open(path, 'rb') as f:
         obsList = pickle.load(f)
 
+
+    #last_obs = []
     #turn each episode into a single numpy array
     for i in range(len(obsList)):
         obsList[i] = np.vstack(obsList[i]) 
+        #last_obs.append(obsList[i][-1, :])
+        #print(obsList[i])
+
         #print("obsList[i].shape: ", obsList[i].shape)
         # bad_num_original = [x for x in obsList[i][:, -1:] if x < -0.5 or x > 1.5]
         # if len(bad_num_original) > 0:
         #     print(f"Original {i} bad_num_original: ", bad_num_original)
 
-    print("len(obslist): ", len(obsList))
-    print("shape: ", obsList[1].shape)
+
 
     #for each episode label the data according to horizon
     if horizon is not None:
@@ -53,7 +60,7 @@ def load_data_tensors(path, train_val_test_split, horizon=None):
     val_list = obsList[num_train: num_train + num_val]
     test_list = obsList[num_train + num_val:]
 
-    print("Utils original numpy dtype: ", obsList[0].dtype)
+    #print("Utils original numpy dtype: ", obsList[0].dtype)
     #concatenate each train, val and test list of np arrays into
     #each being a single tensor
     #convert train, val and test tensor into float32
@@ -65,7 +72,7 @@ def load_data_tensors(path, train_val_test_split, horizon=None):
         #     obsTensorList.append(appendTensor)
         #     #obsTensor = torch.cat((obsTensor, appendTensor), 0)
         obsTensor = torch.cat(obsTensorList)
-        print("obsTensor.shape: ", obsTensor.size())
+        #print("obsTensor.shape: ", obsTensor.size())
         # quit()
         # print("obsTensor dtype before conversion in utils: ", obsTensor.dtype)
         # bad_num = [x for x in obsTensor[:, -1:].flatten() if x < -1 or x > 2]
@@ -77,8 +84,7 @@ def load_data_tensors(path, train_val_test_split, horizon=None):
         # print("bad numb after converstion in utils: ", bad_num)
         tensorList.append(obsTensor)
 
-    return tensorList
-
+    return tensorList 
 def load_datasets(path, train_val_test_split, horizon, device='cpu'):
     """
     Loads data from path, labels it according to horizon and stores it according to the 
@@ -106,6 +112,31 @@ def load_datasets(path, train_val_test_split, horizon, device='cpu'):
     testDataset = TensorDataset(tensorList[2][:, :-1], tensorList[2][:, -1:])
 
     return trainDataset, valDataset, testDataset
+
+def load_abs_datasets(path, train_val_test_split, horizon, device='cpu', preprocess = True):
+    tensorList = load_data_tensors(path, train_val_test_split, horizon)
+    tensorList = [t.to(device=device) for t in tensorList]
+    if preprocess:
+        tensorList = [preprocess_abs_dataset(t) for t in tensorList]
+
+    trainDataset = TensorDataset(tensorList[0][:, :-1], tensorList[0][:, -1:])
+    valDataset = TensorDataset(tensorList[1][:, :-1], tensorList[1][:, -1:])
+    testDataset = TensorDataset(tensorList[2][:, :-1], tensorList[2][:, -1:])
+
+    return trainDataset, valDataset, testDataset
+
+
+def preprocess_abs_dataset(data):
+    """
+    Input tensor should have observations [agent.x, agent.y, ball.x, ball.y, agent.face_angle, label]
+    """
+    field_half_width = 4500
+    data[:, :4] = data[:, :4] / field_half_width #normalize
+    rad_angle = torch.deg2rad(data[:, 4])
+    cos_face_angle = torch.cos(rad_angle)
+    sin_face_angle = torch.sin(rad_angle)
+    data = torch.cat((data[:4], cos_face_angle, sin_face_angle, data[:, 5:]), dim=1)
+    return data
 
 def get_pos_weight(dataset):
     """

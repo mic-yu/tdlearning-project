@@ -1,10 +1,10 @@
 mode: "wandb_sweep" #or "single_run" #or "sweep"
-path: "./data/n_eps-100-env-base_agent_env_2025-08-13_16-12-02.pkl" #training data path
+path: "./data/n_eps-100-env-base_agent_env_2025-11-06_21-07-54.pkl" #training data path
 model_storage_dir: "models"
 chtc: True
-max_k: 10
+max_k: 100
 train_val_test_split: [0.6, 0.2, 0.2]
-num_epochs: 5
+num_epochs: 200
 train_forward_sig: True #Manually pass outputs of model during training through a sigmoid layer inside script. 
                         #It is always turned off for the model.
 eval_frequency: 5 #Evaluation will happen every eval_frequency epochs during training
@@ -14,7 +14,7 @@ optimizer: "Adam"
 
 wandb:
   entity: "dpinchuk-university-of-wisconsin-madison"
-  project: "test_sweep_2" #"td_test"
+  project: "td_abs" #"td_test"
 
 wandb_sweep:
   name: "test_4"

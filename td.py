@@ -8,6 +8,7 @@ import os
 import wandb
 import copy
 import time
+import random
 
 from torch.utils.data import TensorDataset, random_split, DataLoader
 from optuna.integration.wandb import WeightsAndBiasesCallback
@@ -17,10 +18,39 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 from torch import nn
 
-from utils import load_data_tensors, get_ba_from_conf
+from utils import load_data_tensors, get_ba_from_conf, preprocess_abs_dataset
 from GoalNet import GoalNet
 from train import train, eval
 
+def set_seed(seed=37):
+    """
+    Set random seeds for reproducibility across all libraries
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+def get_abs_episode_data(path, train_val_test_split):
+    with open(path, 'rb') as f:
+        obsList = pickle.load(f)
+
+    #turn each episode into a single numpy array
+    for i in range(len(obsList)):
+        obsList[i] = torch.tensor(np.vstack(obsList[i]), dtype=torch.float32)
+        obsList[i] = preprocess_abs_dataset(obsList[i])
+
+
+    #do train/val/test split by episodes
+    num_eps = len(obsList)
+    num_val = math.floor(train_val_test_split[1] * num_eps)
+    num_test = math.ceil(train_val_test_split[2] * num_eps)
+    num_train = num_eps - num_test - num_val
+
+    train_list = obsList[:num_train]
+    val_list = obsList[num_train: num_train + num_val]
+    test_list = obsList[num_train + num_val:]
+
+    return train_list, val_list, test_list
 
 def get_episode_data(path, train_val_test_split):
     with open(path, 'rb') as f:
@@ -182,9 +212,9 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
     trainData = get_td_train_data(trainDataList, cfg)
     trainData = trainData.to(device=params["device"])
     trainDataset = TensorDataset(trainData)
-    #generator = torch.Generator().manual_seed(37)
+    generator = torch.Generator().manual_seed(37)
     #debugDataset, _ = torch.utils.data.random_split(trainDataset, [0.2, 0.8], generator=generator)
-    trainDataLoader = DataLoader(trainDataset, batch_size=params["bs"], shuffle=True)
+    trainDataLoader = DataLoader(trainDataset, batch_size=params["bs"], shuffle=True, generator=generator)
 
     lr = params["lr"]
     loss_fn = params["loss_fn"]
@@ -352,10 +382,11 @@ def wandb_sweep_objective(hydra_cfg):
               }
 
     #Data
-    trainList, valList, _ = get_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split)
+    trainList, valList, _ = get_abs_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split)
     valData = get_val_data(valList, hydra_cfg).to(device=device)
     valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
-    valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True)
+    generator = torch.Generator().manual_seed(37)
+    valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True, generator=generator)
 
     #training
     input_size = trainList[0].size(dim=1)
@@ -576,6 +607,7 @@ def run(cfg):
     #     "name": run_name
     #     }
     #wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)
+    set_seed(37)
     wandb.login()
     if cfg.mode == "sweep":
         partial_objective = partial(objective,  cfg=cfg)
