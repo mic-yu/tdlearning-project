@@ -14,7 +14,7 @@ optimizer: "Adam"
 
 wandb:
   entity: "dpinchuk-university-of-wisconsin-madison"
-  project: "td_abs" #"td_test"
+  project: "td_abs_inf" #"td_test"
 
 wandb_sweep:
   name: "ep_100_abs_l5_BCE"
