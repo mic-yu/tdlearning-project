@@ -62,6 +62,54 @@ def plot_fixed_agent_td(model, iso_reg, abs_agent_loc, horizon, scale=10):
     plt.xlabel(f"Agent coordinates are ({agent_x}, {agent_y}, {agent_z})")
     plt.show()
 
+def plot_fixed_abs_agent(model, iso_reg, abs_agent_loc, scale=10):
+    num_x = 9*scale
+    num_y = 6*scale
+    
+    agent_x = abs_agent_loc[0]
+    agent_y = abs_agent_loc[1]
+    agent_z = abs_agent_loc[2]
+
+    x = np.linspace(-4500, 4500, num=num_x)
+    y = np.linspace(-3000, 3000, num=num_y)
+    xv, yv = np.meshgrid(x,y)
+    #print("xv.shape: ", xv.shape)
+
+
+
+    abs_ball_mesh = np.stack((xv.flatten(), yv.flatten()), axis=1)
+    abs_ball = []
+    for i, ball_loc in enumerate(abs_ball_mesh):
+        abs_ball.append(np.append(ball_loc, 0))
+
+
+
+    abs_goal = np.array((abs_agent_loc[0], 0))
+    #print("rel_goal: ", rel_goal)
+    abs_goal = torch.tensor(abs_goal).to(dtype=torch.float32)
+    abs_goal = abs_goal.repeat((num_x*num_y, 1))
+
+    print("abs_goal.size()", abs_goal.size())
+    abs_ball = np.array(abs_ball)
+    abs_ball = torch.from_numpy(abs_ball).to(dtype=torch.float32)
+    print("abs_ball.size()", abs_ball.size())
+    abs_input = torch.cat((abs_goal, abs_ball), dim=1) #(num_x*num_y , 8)
+    #print("rel_input.size(): ", rel_input.size())
+    print("abs_input.size()", abs_input.size())
+
+    output = model(abs_input)
+    output = iso_reg.transform(output.numpy(force=True))
+    # output = torch.from_numpy(output)
+    # output = output.view(num_y, num_x)
+    output = np.reshape(output, shape=(num_y, num_x))
+    #print("output.size: ", output.shape)
+
+    plt.imshow(output, extent=[-4500, 4500, -3000, 3000], origin='lower')
+    plt.colorbar()
+    plt.title(f"Horizon {horizon} \n Opponent goal is on the right.")
+    plt.xlabel(f"Agent coordinates are ({agent_x}, {agent_y}, {agent_z})")
+    plt.show()
+
 def plot_fixed_agent(model, iso_reg, abs_agent_loc, scale=10):
     num_x = 9*scale
     num_y = 6*scale
@@ -203,42 +251,50 @@ def plot_agent_near_ball_td(model, iso_reg, delta, horizon, agent_z=0, scale=10)
 
 
 if __name__ == "__main__":
-    # horizon = 100 #iteratons
-    # cluster = 4357100
-    # #temporary:
-    # #reflects personal file structure
-    # match horizon:
-    #     case 10:
-    #         job = 0
-    #     case 100:
-    #         job = 1
-    #     case 50:
-    #         job = 2
+    horizon = 100 #iteratons
+    #cluster = 4357100
+    cluster = 4600982
+    #temporary:
+    #reflects personal file structure
+    match horizon:
+        case 10:
+            job = 2
+        case 100:
+            job = 0
+        case 50:
+            job = 1
+
+    storage_path = f"./../roboClassifier/abs_output_files/transfer_models_{cluster}_{job}_{horizon}/models/"
+    db_dir = f"./../roboClassifier/abs_output_files/transfer_databases_{cluster}_{job}_{horizon}/databases/"
+    db_path = f"sqlite:///" + db_dir + "optuna_goalNet.db"
 
     # storage_path = f"./transfer/transfer_models_4346754_{job}_{horizon}/models/"
     # db_dir = f"./transfer/transfer_databases_4346754_{job}_{horizon}/databases/"
     # db_path = f"sqlite:///" + db_dir + "optuna_goalNet.db"
-    # study_name = "horizon_{}_goalNet_BABCE_BA".format(horizon)
-    # iso_reg_save_path = f"iso_reg_{cluster}_{horizon}.pkl"
-    # input_size = 8
+    study_name = "horizon_{}_goalNet_BABCE_BA".format(horizon)
+    iso_reg_save_path = f"./../roboClassifier/iso_reg_{cluster}_{horizon}.pkl"
+    input_size = 5
 
-    # study = optuna.load_study(study_name=study_name, storage=db_path)
-    # trial = study.best_trial
-    # hidden_sizes = get_hidden_sizes_from_optuna(db_path, study_name, trial)
-    # model_path = f"{storage_path}{study_name}/{study_name}_trial_{trial.number}.pth"
-    # assert os.path.exists(model_path)
-    # model = GoalNet(input_size, hidden_sizes)
-    # model.load_state_dict(torch.load(model_path, map_location=torch.device("cpu"), weights_only=True))
-    # model.eval()
+    study = optuna.load_study(study_name=study_name, storage=db_path)
+    trial = study.best_trial
+    hidden_sizes = get_hidden_sizes_from_optuna(db_path, study_name, trial)
+    model_path = f"{storage_path}{study_name}/{study_name}_trial_{trial.number}.pth"
+    assert os.path.exists(model_path)
+    model = GoalNet(input_size, hidden_sizes)
+    model.load_state_dict(torch.load(model_path, map_location=torch.device("cpu"), weights_only=True))
+    model.eval()
 
-    # with open(iso_reg_save_path, "rb") as f:
-    #     iso_reg = pickle.load(f)
+    with open(iso_reg_save_path, "rb") as f:
+        iso_reg = pickle.load(f)
 
-    # print("horizon: ", horizon)
-    # print("job: ", job)
-    # print("input_size: ", input_size)
-    # print("hidden_sizes: ", hidden_sizes)
-    # print("model_path: ", model_path)
+    print("horizon: ", horizon)
+    print("job: ", job)
+    print("input_size: ", input_size)
+    print("hidden_sizes: ", hidden_sizes)
+    print("model_path: ", model_path)
+
+    abs_agent_loc = [2000, 0, 0]
+    plot_fixed_abs_agent(model, iso_reg, abs_agent_loc)
 
     # for x in [-4000, -2000, -1000, 0, 1000, 2000, 4000]:
     #     abs_agent_loc = [x, 0, 0]
@@ -251,12 +307,12 @@ if __name__ == "__main__":
     #     delta = [dx, 0]
     #     plot_agent_near_ball(model, iso_reg, delta, agent_z=0, scale=10)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_path = "./artifact_download/tdgoal_h100_ep500_epoch200_l5_trial_2025-08-27_16-10-28_pv5kiybp_best.pth"
-    run_path = "dpinchuk-university-of-wisconsin-madison/tdgoal_h100_ep500_epoch200/pv5kiybp"
-    assert os.path.exists(model_path)
-    model = load_wandb_model(run_path, model_path, device)
-    iso_reg = load_iso_reg("./temp_best_td_model_iso_reg.pth")
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # model_path = "./artifact_download/tdgoal_h100_ep500_epoch200_l5_trial_2025-08-27_16-10-28_pv5kiybp_best.pth"
+    # run_path = "dpinchuk-university-of-wisconsin-madison/tdgoal_h100_ep500_epoch200/pv5kiybp"
+    # assert os.path.exists(model_path)
+    # model = load_wandb_model(run_path, model_path, device)
+    # iso_reg = load_iso_reg("./temp_best_td_model_iso_reg.pth")
 
     # for x in [-4000, -2000, -1000, 0, 1000, 2000, 4000]:
     #     abs_agent_loc = [x, 0, 180]
@@ -267,8 +323,8 @@ if __name__ == "__main__":
     #     delta = [dx, 0]
     #     plot_agent_near_ball_td(model, iso_reg, delta, 100, agent_z=0, scale=10)
     
-    delta = [1000, 0]
-    plot_agent_near_ball_td(model, iso_reg, delta, 100, agent_z=0, scale=10)
+    # delta = [1000, 0]
+    # plot_agent_near_ball_td(model, iso_reg, delta, 100, agent_z=0, scale=10)
 
 
 

@@ -15,7 +15,7 @@ from sklearn.isotonic import IsotonicRegression
 from GoalNet import GoalNet
 from utils import load_data_tensors, load_datasets, get_hidden_sizes_from_optuna, get_ba_from_conf
 from artifact_download import load_wandb_model
-from td import get_episode_data
+from td import get_episode_data, get_abs_episode_data
 
 
 def train_iso_reg(model, X, Y):
@@ -267,12 +267,13 @@ def cal_eval():
         print()
 
 def td_eval(horizon, device):
-    path = "./data/n_eps-500-env-base_agent_env_2025-06-05_20-56-48.pkl"
+    #path = "./data/n_eps-500-env-base_agent_env_2025-06-05_20-56-48.pkl"
     #path = "./data/n_eps-2000-env-base_agent_env_2025-06-15_00-40-56.pkl"
+    path = "./data/n_eps-100-env-base_agent_env_2025-11-06_21-07-54.pkl"
     train_val_test_split = [0.6, 0.2, 0.2]
     assert sum(train_val_test_split) == 1
 
-    _, valList, testList = get_episode_data(path, train_val_test_split)
+    _, valList, testList = get_abs_episode_data(path, train_val_test_split)
     valTensor = horizon_val_data(valList, horizon, 100)
     testTensor = horizon_val_data(testList, horizon, 100)
     X_val = valTensor[:, :-1]
@@ -287,8 +288,10 @@ def td_eval(horizon, device):
     #cluster = 4346754
     
     #get model
-    model_path = "./artifact_download/tdgoal_h100_ep500_epoch200_l5_trial_2025-08-27_16-10-28_pv5kiybp_best.pth"
-    run_path = "dpinchuk-university-of-wisconsin-madison/tdgoal_h100_ep500_epoch200/pv5kiybp"
+    #model_path = "./artifact_download/tdgoal_h100_ep500_epoch200_l5_trial_2025-08-27_16-10-28_pv5kiybp_best.pth"
+    model_path = "./artifact_download/ep_100_abs_l5_BCE_trial_2025-11-07_20-40-04_uydoh1wg_best.pth"       
+    #run_path = "dpinchuk-university-of-wisconsin-madison/tdgoal_h100_ep500_epoch200/pv5kiybp"
+    run_path = "dpinchuk-university-of-wisconsin-madison/td_abs/uydoh1wg"
     assert os.path.exists(model_path)
     model = load_wandb_model(run_path, model_path, device)
 
@@ -308,7 +311,7 @@ def td_eval(horizon, device):
         print("calibrate on validation set")
         iso_reg = train_iso_reg(model, X_val, Y_val)
 
-        save_iso_reg(iso_reg, f"./best_td_iso_reg_h{horizon}.pth")
+        save_iso_reg(iso_reg, f"./best_td_iso_reg_abs_h{horizon}.pth")
 
         print("Uncalibrated model on test set:")
         BA, bce = get_td_ba_bce(model, X_test, Y_test)

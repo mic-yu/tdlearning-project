@@ -18,7 +18,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 from torch import nn
 
-from utils import load_data_tensors, get_ba_from_conf, preprocess_abs_dataset
+from utils import load_data_tensors, get_ba_from_conf, preprocess_abs_dataset, load_abs_datasets
 from GoalNet import GoalNet
 from train import train, eval
 
@@ -101,6 +101,27 @@ def get_td_train_data(data_list, cfg):
         new_ep_list.append(last_k_sample)
         
         
+    dataTensor = torch.cat(new_ep_list, dim=0)
+    return dataTensor
+
+def get_td_train_data_inf(data_list, cfg):
+    """
+    Args:
+        data (List of episodes)
+    """
+    new_ep_list = []
+    for ep in data_list:
+        tile_length = ep.size(dim=0) - 1
+        #print("ep.size: ", ep.size())
+        
+        terminal_info = torch.tensor(0).tile((tile_length, 1))
+        terminal_info[-1][0] = 1
+        new_sample = torch.cat((ep[:-1, :-1], ep[1:, :-1], terminal_info, ep[1:, -1:]), dim=1)    
+        new_sample[0:, -1] = ep[-1][-1]
+        #print("new_sample.size: ", new_sample.size())
+        #print("tile size: ", tile_length)
+        new_ep_list.append(new_sample)
+ 
     dataTensor = torch.cat(new_ep_list, dim=0)
     return dataTensor
 
@@ -205,11 +226,29 @@ def get_target_from_batch(batch, targetModel, cfg, params):
     X = torch.cat((batch[:, :state_dim], batch[:, -3:-2]), dim=1)
     return X, Y
 
+def get_target_from_batch_inf(batch, targetModel, cfg, params):
+    """
+    batch (Tensor): N x ((state s ), (state s'), terminal_info (for s'), true_value)
+    """
+    assert (batch.size(dim=1) - 2) % 2 == 0
+    state_dim = int((batch.size(dim=1) - 2) / 2)
+    with torch.no_grad():
+        target_input = batch[:, state_dim:-2]
+        Y = targetModel(target_input)
+    
+    for idx in range(batch.size(dim=0)):
+        if batch[idx][-2] == 1:
+            Y[idx][0] = batch[idx][-1]
+    
+    X = batch[:, :state_dim]
+    return X, Y
+
         
     
 
 def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
-    trainData = get_td_train_data(trainDataList, cfg)
+    #trainData = get_td_train_data(trainDataList, cfg)
+    trainData =get_td_train_data_inf(trainDataList, cfg)
     trainData = trainData.to(device=params["device"])
     trainDataset = TensorDataset(trainData)
     generator = torch.Generator().manual_seed(37)
@@ -248,7 +287,7 @@ def train_td_new(trial, wb_run, model, trainDataList, valDataLoader, cfg, params
         running_count = 0
         model.train()
         for batch, in trainDataLoader:
-            X, Y = get_target_from_batch(batch, targetModel, cfg, params)
+            X, Y = get_target_from_batch_inf(batch, targetModel, cfg, params)
             optimizer.zero_grad()
             outputs = model(X)
             if cfg.train_forward_sig:
@@ -382,14 +421,16 @@ def wandb_sweep_objective(hydra_cfg):
               }
 
     #Data
-    trainList, valList, _ = get_abs_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split)
-    valData = get_val_data(valList, hydra_cfg).to(device=device)
-    valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
+    trainList, _, _ = get_abs_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split)
+    #valData = get_val_data(valList, hydra_cfg).to(device=device)
+    #valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
+    _, valDataset, _ = load_abs_datasets(hydra_cfg.path, hydra_cfg.train_val_test_split, -1, device=device)
     generator = torch.Generator().manual_seed(37)
     valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True, generator=generator)
 
     #training
-    input_size = trainList[0].size(dim=1)
+    #input_size = trainList[0].size(dim=1) 
+    input_size = trainList[0][0].size(dim=1) - 1
     myModel = GoalNet(input_size, hidden_sizes).to(device=device)
 
     params["input_size"] = input_size
