@@ -186,25 +186,25 @@ def get_val_data(data_list, cfg):
     return dataTensor
     
 
-def train_td(trial, model, trainData, valDataLoader, cfg, params):
-    for epoch in range(cfg.num_epochs):
-        with torch.no_grad():
-            dataTensor = td_data_update(model, trainData, cfg)
-        nn_dataset = TensorDataset(dataTensor[:, :-1], dataTensor[:, -1:])
-        dataloader = DataLoader(nn_dataset, batch_size=params["bs"], shuffle=True)
-        model = train(trial, model, dataloader, cfg, params)
+# def train_td(trial, model, trainData, valDataLoader, cfg, params):
+#     for epoch in range(cfg.num_epochs):
+#         with torch.no_grad():
+#             dataTensor = td_data_update(model, trainData, cfg)
+#         nn_dataset = TensorDataset(dataTensor[:, :-1], dataTensor[:, -1:])
+#         dataloader = DataLoader(nn_dataset, batch_size=params["bs"], shuffle=True)
+#         model = train(trial, model, dataloader, cfg, params)
 
-        if (epoch + 1) % cfg.eval_frequency == 0:
-            val_loss, conf_mx = eval(model, valDataLoader, params["loss_fn"])
-            trial.report(-val_loss, epoch)
-            BA = get_ba_from_conf(*conf_mx.ravel())
-            wandb_report = {"epoch": epoch,
-                            "val_loss": val_loss,
-                            "BA": BA,
-                            "len_train_dataloader": len(dataloader)
-                            }
-            wandb.log(wandb_report)
-    return model
+#         if (epoch + 1) % cfg.eval_frequency == 0:
+#             val_loss, conf_mx = eval(model, valDataLoader, params["loss_fn"])
+#             trial.report(-val_loss, epoch)
+#             BA = get_ba_from_conf(*conf_mx.ravel())
+#             wandb_report = {"epoch": epoch,
+#                             "val_loss": val_loss,
+#                             "BA": BA,
+#                             "len_train_dataloader": len(dataloader)
+#                             }
+#             wandb.log(wandb_report)
+#     return model
 
 def get_target_from_batch(batch, targetModel, cfg, params):
     """
@@ -430,7 +430,7 @@ def wandb_sweep_objective(hydra_cfg):
 
     #training
     #input_size = trainList[0].size(dim=1) 
-    input_size = trainList[0][0].size(dim=1) - 1
+    input_size = trainList[0].size(dim=1) - 1
     myModel = GoalNet(input_size, hidden_sizes).to(device=device)
 
     params["input_size"] = input_size

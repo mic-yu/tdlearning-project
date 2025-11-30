@@ -33,5 +33,6 @@ if __name__ == "__main__":
     #path = "./../abstract-sim/abstractSim/data/obs/near_ball_dx_100_scale_6_h_1002025-09-21_22-39-25.pkl"
     #path = "./../abstract-sim/abstractSim/data/obs/near_ball_dx_100_scale_8_h_1002025-09-21_22-47-14.pkl"
     #path = "./../abstract-sim/abstractSim/data/obs/near_ball_dx_100_scale_10_h_1002025-09-21_22-55-15.pkl"
-    path = "./../abstract-sim/abstractSim/data/obs/near_ball_dx_1000_scale_10_h_1002025-09-23_00-52-51.pkl"
+    #path = "./../abstract-sim/abstractSim/data/obs/near_ball_dx_1000_scale_10_h_1002025-09-23_00-52-51.pkl"
+    path = "./data/ground_truth/near_ball_dx_100_scale_10_h_inf_2025-11-26_15-43-30.pkl"
     plot_ground_truth(path)

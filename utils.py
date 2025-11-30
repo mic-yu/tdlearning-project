@@ -8,7 +8,117 @@ from torch.utils.data import TensorDataset
 
 np.set_printoptions(threshold=sys.maxsize)
 
+def get_val_data(data_list, cfg):
+    """
+    Args:
+        data (List of episodes)
+    """
+    max_k = cfg.max_k
+    new_ep_list = []
+    for ep in data_list:
+        tile_length = ep.size(dim=0) - 1
+        for k in range(1, max_k+1):  
 
+            #add k feature
+            h_feat = torch.tensor(k / max_k).tile((tile_length, 1)) #horizon feature
+            new_feature_data = torch.cat((ep[:-1, :-1], h_feat, ep[1:, -1:]), dim=1)
+            #label the data according to horizon k
+            new_feature_data[-k:, -1] = ep[-1][-1]
+            
+            new_ep_list.append(new_feature_data)
+
+        #now do k=1
+        # last_h_feat = torch.tensor(1 / max_k).tile((tile_length, 1))
+        # last_k_sample = torch.cat((ep[:-1, :-1], last_h_feat, ep[1:, -1:]), dim=1)
+        # new_ep_list.append(last_k_sample)
+        
+    dataTensor = torch.cat(new_ep_list, dim=0)
+    return dataTensor
+
+def get_td_train_data_inf(data_list):
+    """
+    Returns training data labeled according to "infinite" horizon 
+    (does it score by end of episode i.e. horizon = length of episode)
+    terminal_info indicates if S is the last state in the episode
+    Assumes that last state in the episode is the one right before scoring 
+        or going out of bounds
+    Args:
+        data (List[torch.tensor]): List of episodes shaped as (N_transitions_in_episode x (features, label))
+
+    Returns:
+        torch.Tensor: N_transitions_total x (S features, S' features, terminal_info, label of S)
+    """
+    new_ep_list = []
+    for ep in data_list:
+        tile_length = ep.size(dim=0) - 1
+        terminal_info = torch.tensor(0).tile((tile_length, 1))
+        new_ep = torch.cat((ep[:-1, :-1], ep[1:, :-1], terminal_info, ep[1:, -1:]), dim=1)    
+        new_ep[0:, -1] = ep[-1][-1]
+
+        terminal_state = torch.cat((ep[-1, :-1], torch.zeros_like(ep[-1, :-1]), torch.tensor([1]), ep[-1, -1:]), dim=0)
+        new_ep = torch.cat((new_ep, torch.unsqueeze(terminal_state, 0)), dim=0)
+
+        new_ep_list.append(new_ep)
+ 
+    dataTensor = torch.cat(new_ep_list, dim=0)
+    return dataTensor
+
+def get_abs_episode_data(path, train_val_test_split):
+    """
+    Expects input data to be a list of episodes(List[np.array]). 
+    Each episode is of shape N x (features, label).
+    Robocup data should be (robot x, robot y, ball x, ball y, robot face angle in rad)
+    Preprocesses the data by normalizing and turning angle into cos and sin.
+    Returns train/val/test sets as lists of episodes.
+    
+    Returns:
+    Tuple containing
+
+        -List[torch.tensor]: train
+        -List[torch.tensor]: val
+        -List[torch.tensor]: test
+    """
+    with open(path, 'rb') as f:
+        obsList = pickle.load(f)
+
+    #turn each episode into a single numpy array
+    for i in range(len(obsList)):
+        obsList[i] = torch.tensor(np.vstack(obsList[i]), dtype=torch.float32)
+        obsList[i] = preprocess_abs_dataset(obsList[i])
+
+
+    #do train/val/test split by episodes
+    num_eps = len(obsList)
+    num_val = math.floor(train_val_test_split[1] * num_eps)
+    num_test = math.ceil(train_val_test_split[2] * num_eps)
+    num_train = num_eps - num_test - num_val
+
+    train_list = obsList[:num_train]
+    val_list = obsList[num_train: num_train + num_val]
+    test_list = obsList[num_train + num_val:]
+
+    return train_list, val_list, test_list
+
+def get_episode_data(path, train_val_test_split):
+    with open(path, 'rb') as f:
+        obsList = pickle.load(f)
+
+    #turn each episode into a single numpy array
+    for i in range(len(obsList)):
+        obsList[i] = torch.tensor(np.vstack(obsList[i]), dtype=torch.float32)
+
+
+    #do train/val/test split by episodes
+    num_eps = len(obsList)
+    num_val = math.floor(train_val_test_split[1] * num_eps)
+    num_test = math.ceil(train_val_test_split[2] * num_eps)
+    num_train = num_eps - num_test - num_val
+
+    train_list = obsList[:num_train]
+    val_list = obsList[num_train: num_train + num_val]
+    test_list = obsList[num_train + num_val:]
+
+    return train_list, val_list, test_list
 
 def load_data_tensors(path, train_val_test_split, horizon=None):
     """
@@ -33,15 +143,6 @@ def load_data_tensors(path, train_val_test_split, horizon=None):
     #turn each episode into a single numpy array
     for i in range(len(obsList)):
         obsList[i] = np.vstack(obsList[i]) 
-        #last_obs.append(obsList[i][-1, :])
-        #print(obsList[i])
-
-        #print("obsList[i].shape: ", obsList[i].shape)
-        # bad_num_original = [x for x in obsList[i][:, -1:] if x < -0.5 or x > 1.5]
-        # if len(bad_num_original) > 0:
-        #     print(f"Original {i} bad_num_original: ", bad_num_original)
-
-
 
     #for each episode label the data according to horizon
     if horizon is not None:
@@ -60,28 +161,14 @@ def load_data_tensors(path, train_val_test_split, horizon=None):
     val_list = obsList[num_train: num_train + num_val]
     test_list = obsList[num_train + num_val:]
 
-    #print("Utils original numpy dtype: ", obsList[0].dtype)
     #concatenate each train, val and test list of np arrays into
     #each being a single tensor
     #convert train, val and test tensor into float32
     tensorList = []
     for npList in [train_list, val_list, test_list]:
         obsTensorList = [torch.tensor(x) for x in npList] #convert each numpy array into torch
-        # for i in range(len(npList)):
-        #     appendTensor = torch.tensor(npList[i]) #size[1] = 9
-        #     obsTensorList.append(appendTensor)
-        #     #obsTensor = torch.cat((obsTensor, appendTensor), 0)
         obsTensor = torch.cat(obsTensorList)
-        #print("obsTensor.shape: ", obsTensor.size())
-        # quit()
-        # print("obsTensor dtype before conversion in utils: ", obsTensor.dtype)
-        # bad_num = [x for x in obsTensor[:, -1:].flatten() if x < -1 or x > 2]
-        # print("bad num in utils before conversion: ", bad_num)
-
-        # print("Conversion in utils: ")
         obsTensor = obsTensor.to(torch.float32)
-        # bad_num = [x for x in obsTensor[:, -1:].flatten() if x < -1 or x > 2]
-        # print("bad numb after converstion in utils: ", bad_num)
         tensorList.append(obsTensor)
 
     return tensorList 
@@ -114,6 +201,19 @@ def load_datasets(path, train_val_test_split, horizon, device='cpu'):
     return trainDataset, valDataset, testDataset
 
 def load_abs_datasets(path, train_val_test_split, horizon, device='cpu', preprocess = True):
+    """
+    Expects input data to be a list of episodes(List[np.array]). 
+    Each episode is of shape N x (features, label).
+    Robocup data should be (robot x, robot y, ball x, ball y, robot face angle in rad)
+    Preprocesses the data by normalizing and turning angle into cos and sin.
+    Returns train/val/test sets as torch datasets
+    
+    Returns:
+    Tuple containing:
+        -torch.Dataset (train)
+        -torch.Dataset (val)
+        -torch.Dataset (test)
+    """
     tensorList = load_data_tensors(path, train_val_test_split, horizon)
     tensorList = [t.to(device=device) for t in tensorList]
     if preprocess:
