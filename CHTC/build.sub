@@ -1,0 +1,17 @@
+# build.sub
+# For building an Apptainer container
+
+universe = vanilla
+log = build_$(Cluster).log
+
+# If you have additional files in your /home directory that are required for your container, add them to the transfer_input_files line as a comma-separated list.
+transfer_input_files = tdgoal.def, tdgoal/environment.yml
+
+requirements = (HasCHTCStaging == true)
+
++IsBuildJob = true
+request_cpus = 4
+request_memory = 16GB
+request_disk = 16GB
+
+queue

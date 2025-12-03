@@ -1,0 +1,20 @@
+container_image = file:///staging/dpinchuk/tdgoal.sif
+
+executable = sweep.sh
+environment = CLUSTER_ID=$(Cluster); PROCESS_ID=$(Process)
+
+transfer_input_files = tdgoal/
+
+log = tdgoal_$(Cluster)_$(Process).log
+error = tdgoal_$(Cluster)_$(Process).err
+output = tdgoal_$(Cluster)_$(Process).out
+
++WantGPULab = true
++GPUJobLength = "short"
+
+request_gpus = 1
+request_cpus = 24
+request_memory = 16GB
+request_disk = 16GB
+
+queue 1

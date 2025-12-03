@@ -1,4 +1,16 @@
-Here is my workflow:
+Overview:
+A lot of files are irrelevant.
+
+config.yaml defines all the parameters
+
+run.py is the entrypoint, which defines the run
+
+train_td.py contains the training and evalutation loop.
+
+utils.py contains various dataloading and other domain specific helper functions.
+
+
+Workflow:
 1. Create a Wandb sweep (and project if it doesn't exist). Define the search space in config.search_space. Define the sweep name and number of neural network layers
  in config.wandb_sweep. Define the values in config.wandb. Run
     `python  init_wandb_sweep.py`
@@ -14,7 +26,7 @@ Here is my workflow:
    `python download_artifact.py`
 
 Using CHTC. Heres an intro <https://chtc.cs.wisc.edu/uw-research-computing/htc-roadmap#main>.
-1. Place the CHTC submit files (build.sub, sweep.sub, sweep.sh) outside of the tdgoal repository.
+1. Place the CHTC submit files (build.sub, sweep.sub, sweep.sh) located in tdgoal/CHTC/ outside of the tdgoal repository.
 2. Build the .sif image for the container you will be using. I already wrote the build.sub file. Follow the guide at <https://chtc.cs.wisc.edu/uw-research-computing/apptainer-htc#build-your-own-container>
    to build the image.
 3. Add your wandb_api in sweep.sh. Edit sweep.sub to change the resources you want to request per job and the number of jobs you want to submit (the number after the word "queue").
