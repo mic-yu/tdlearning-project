@@ -63,9 +63,9 @@ def get_td_train_data_inf(data_list):
     dataTensor = torch.cat(new_ep_list, dim=0)
     return dataTensor
 
-def get_abs_episode_data(path, train_val_test_split):
+def get_abs_episode_data(path, train_val_test_split, ep_np=True, preprocess=False):
     """
-    Expects input data to be a list of episodes(List[np.array]). 
+    Expects input data to be a list of episodes(List[List[np.array]]) or (List[np.array] if ep_np=True)
     Each episode is of shape N x (features, label).
     Robocup data should be (robot x, robot y, ball x, ball y, robot face angle in rad)
     Preprocesses the data by normalizing and turning angle into cos and sin.
@@ -83,8 +83,11 @@ def get_abs_episode_data(path, train_val_test_split):
 
     #turn each episode into a single numpy array
     for i in range(len(obsList)):
-        obsList[i] = torch.tensor(np.vstack(obsList[i]), dtype=torch.float32)
-        obsList[i] = preprocess_abs_dataset(obsList[i])
+        if ep_np == False:
+            obsList[i] = np.vstack(obsList[i])
+        obsList[i] = torch.tensor(obsList[i], dtype=torch.float32)
+        if preprocess:
+            obsList[i] = preprocess_abs_dataset(obsList[i])
 
 
     #do train/val/test split by episodes
@@ -120,7 +123,7 @@ def get_episode_data(path, train_val_test_split):
 
     return train_list, val_list, test_list
 
-def load_data_tensors(path, train_val_test_split, horizon=None):
+def load_data_tensors(path, train_val_test_split, horizon=None, ep_np = True):
     """
     Labels data according to the horizon and returns the train, val and test datasets.
 
@@ -141,8 +144,9 @@ def load_data_tensors(path, train_val_test_split, horizon=None):
 
     #last_obs = []
     #turn each episode into a single numpy array
-    for i in range(len(obsList)):
-        obsList[i] = np.vstack(obsList[i]) 
+    if ep_np == False:
+        for i in range(len(obsList)):
+            obsList[i] = np.vstack(obsList[i]) 
 
     #for each episode label the data according to horizon
     if horizon is not None:
@@ -172,6 +176,7 @@ def load_data_tensors(path, train_val_test_split, horizon=None):
         tensorList.append(obsTensor)
 
     return tensorList 
+
 def load_datasets(path, train_val_test_split, horizon, device='cpu'):
     """
     Loads data from path, labels it according to horizon and stores it according to the 
@@ -214,7 +219,7 @@ def load_abs_datasets(path, train_val_test_split, horizon, device='cpu', preproc
         -torch.Dataset (val)
         -torch.Dataset (test)
     """
-    tensorList = load_data_tensors(path, train_val_test_split, horizon)
+    tensorList = load_data_tensors(path, train_val_test_split, horizon, ep_np=True)
     tensorList = [t.to(device=device) for t in tensorList]
     if preprocess:
         tensorList = [preprocess_abs_dataset(t) for t in tensorList]

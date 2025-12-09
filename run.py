@@ -91,10 +91,10 @@ def wandb_sweep_objective(hydra_cfg):
               }
 
     #Data
-    trainList, _, _ = get_abs_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split)
+    trainList, _, _ = get_abs_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split, ep_np=False, preprocess=False)
     #valData = get_val_data(valList, hydra_cfg).to(device=device)
     #valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
-    _, valDataset, _ = load_abs_datasets(hydra_cfg.path, hydra_cfg.train_val_test_split, -1, device=device)
+    _, valDataset, _ = load_abs_datasets(hydra_cfg.path, hydra_cfg.train_val_test_split, -1, device=device, preprocess=False, )
     generator = torch.Generator().manual_seed(37)
     valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True, generator=generator)
 
