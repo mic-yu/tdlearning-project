@@ -974,6 +974,7 @@ def parse_args():
     parser.add_argument("--use-bf16", action="store_true", default=True)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--wandb-project", default=None)
+    parser.add_argument("--wandb-run-name", default=None, help="Name for wandb run")
     
     # Checkpointing
     parser.add_argument("--save-path", default=None, help="Path to save final model")
@@ -1013,7 +1014,11 @@ def main():
             print("WARNING: wandb not installed")
         else:
             try:
-                run = wandb.init(project=args.wandb_project, config=vars(args))
+                run = wandb.init(
+                    project=args.wandb_project,
+                    name=args.wandb_run_name,
+                    config=vars(args)
+                )
                 print(f"Wandb: {run.url}")
             except Exception as e:
                 print(f"WARNING: wandb init failed: {e}")
