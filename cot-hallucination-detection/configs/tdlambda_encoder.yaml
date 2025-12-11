@@ -45,3 +45,4 @@ save-best: true
 save-path: "checkpoints/td_lambda/final.pt"
 
 wandb-project: "cot-mrp-encoder"
+wandb-run-name: "tdlambda-experiment-1"
