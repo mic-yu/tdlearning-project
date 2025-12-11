@@ -44,3 +44,4 @@ save-best: true
 save-path: "checkpoints/mc/final.pt"
 
 wandb-project: "cot-mrp-encoder"
+wandb-run-name: "mc-experiment-1"
