@@ -1,0 +1,33 @@
+train_path: data/qwen-train.csv
+test_path: data/qwen-test.csv
+model_name: Qwen/Qwen2.5-3B-Instruct
+
+# Model architecture
+model_type: lightweight  # Use lightweight for best balance
+
+# Algorithm
+algo: mc
+
+# RL parameters
+gamma: 1.0  # Pure terminal reward (simplest)
+lmbda: 0.9  # Not used for MC, but included for completeness
+
+# Training hyperparameters
+epochs: 10
+batch_size: 32
+lr: 5.0e-5
+
+# Hardware
+device: cuda
+
+# Model architecture details
+freeze_base: true
+unfreeze_last_n_layers: 2
+pooling_strategy: mean  # Only used for original model
+head_hidden: 512
+head_layers: 3  # Only used for original model
+head_dropout: 0.1
+attn_heads: 4  # Only used for original model with attention pooling
+
+# Logging
+wandb_project: td-learning
