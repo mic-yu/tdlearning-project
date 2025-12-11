@@ -1,0 +1,15 @@
+train_path: data/qwen-train.csv
+test_path: data/qwen-test.csv
+model_name: Qwen/Qwen2.5-3B-Instruct
+algo: all
+gamma: 0.99
+lmbda: 0.9
+epochs: 3
+batch_size: 2
+lr: 1e-4
+device: cuda
+freeze_base: true
+head_hidden: 512
+head_dropout: 0.1
+attn_heads: 4
+wandb_project: null  # set to your W&B project name to enable logging
