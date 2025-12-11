@@ -11,7 +11,12 @@ freeze-base: true  # Start frozen; fine-tune later if needed
 gamma: 1.0         # No discounting - all steps equally predict final outcome
 epochs: 3          # 3 passes through 70k examples
 batch-size: 32    # Balance between gradient stability and memory
-lr: 3e-4           # Standard for Adam with frozen base + small head
+lr: 3e-4 
+
+gradient-accumulation-steps: 8   # Effective batch size = 8 * 8 = 64
+max-length: 1024                 # Truncate long reasoning traces
+use-bf16: true                   # Half precision for base model
+num-workers: 4           # Standard for Adam with frozen base + small head
 
 # Infrastructure
 device: "cuda"

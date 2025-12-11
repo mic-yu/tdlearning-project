@@ -17,11 +17,13 @@ This script initializes the value function from a Qwen model with a linear value
 import argparse
 import json
 import os
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 import torch
 import torch.nn as nn
+from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModel, AutoTokenizer
 
@@ -113,37 +115,56 @@ class ValueModel(nn.Module):
     Output is a logit; apply sigmoid to get probability.
     """
     
-    def __init__(self, base_model_name: str, freeze_base: bool = True):
+    def __init__(
+        self,
+        base_model_name: str,
+        freeze_base: bool = True,
+        use_bf16: bool = True,
+        max_length: int = 1024,
+    ):
         super().__init__()
+        self.freeze_base = freeze_base
+        self.max_length = max_length
+        
         self.tokenizer = AutoTokenizer.from_pretrained(base_model_name)
-        self.base = AutoModel.from_pretrained(base_model_name)
+        
+        # Load base model in bfloat16 to save memory
+        dtype = torch.bfloat16 if use_bf16 else torch.float32
+        self.base = AutoModel.from_pretrained(
+            base_model_name,
+            torch_dtype=dtype,
+            attn_implementation="flash_attention_2",  # Much more memory efficient
+        )
         
         if freeze_base:
+            self.base.eval()  # Permanently in eval mode
             for p in self.base.parameters():
                 p.requires_grad = False
         
         hidden_size = self.base.config.hidden_size
+        # Value head in float32 for stable gradients
         self.value_head = nn.Linear(hidden_size, 1)
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         """
         Encode text and predict scalar value (logit) for each sequence.
-        
-        Args:
-            input_ids: (B, L) token ids
-            attention_mask: (B, L) attention mask
-            
-        Returns:
-            logits: (B,) scalar logits for each sequence
         """
-        outputs = self.base(input_ids=input_ids, attention_mask=attention_mask)
-        hidden = outputs.last_hidden_state  # (B, L, H)
+        # Use no_grad for frozen base to avoid storing activations
+        context = torch.no_grad() if self.freeze_base else nullcontext()
         
-        # Mean pooling over non-padded tokens
-        mask_expanded = attention_mask.unsqueeze(-1).float()  # (B, L, 1)
-        sum_hidden = (hidden * mask_expanded).sum(dim=1)  # (B, H)
-        lengths = mask_expanded.sum(dim=1).clamp(min=1)  # (B, 1)
-        pooled = sum_hidden / lengths  # (B, H)
+        with context:
+            outputs = self.base(input_ids=input_ids, attention_mask=attention_mask)
+            hidden = outputs.last_hidden_state  # (B, L, H)
+            
+            # Mean pooling over non-padded tokens
+            mask_expanded = attention_mask.unsqueeze(-1).float()  # (B, L, 1)
+            sum_hidden = (hidden * mask_expanded).sum(dim=1)  # (B, H)
+            lengths = mask_expanded.sum(dim=1).clamp(min=1)  # (B, 1)
+            pooled = sum_hidden / lengths  # (B, H)
+        
+        # Detach if frozen so gradient only flows through value_head
+        if self.freeze_base:
+            pooled = pooled.detach().float()  # Convert to float32 for value head
         
         logits = self.value_head(pooled).squeeze(-1)  # (B,)
         return logits
@@ -154,7 +175,7 @@ class ValueModel(nn.Module):
             texts,
             padding=True,
             truncation=True,
-            max_length=2048,
+            max_length=self.max_length,
             return_tensors="pt",
         )
         return encoded["input_ids"].to(device), encoded["attention_mask"].to(device)
@@ -227,15 +248,25 @@ def train_td0(model: ValueModel, transitions: List[tuple], args, device):
     where V(s) is the sigmoid of our logits (to stay in [0,1] for probabilities).
     """
     ds = TransitionDataset(transitions)
-    loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True, collate_fn=collate_transitions)
+    loader = DataLoader(
+        ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        collate_fn=collate_transitions,
+        num_workers=args.num_workers,
+        pin_memory=True,
+    )
     opt = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
+    
+    accum_steps = args.gradient_accumulation_steps
     
     global_step = 0
     for epoch in range(args.epochs):
         epoch_loss = 0.0
         num_batches = 0
+        opt.zero_grad()
         
-        for states, next_states, rewards in loader:
+        for batch_idx, (states, next_states, rewards) in enumerate(loader):
             rewards = torch.tensor(rewards, dtype=torch.float32, device=device)
             
             # Compute V(s) for current states
@@ -255,23 +286,34 @@ def train_td0(model: ValueModel, transitions: List[tuple], args, device):
                     ns_values = torch.sigmoid(ns_logits)
                 for idx, val in zip(non_terminal_indices, ns_values):
                     next_values[idx] = val
+                del ns_ids, ns_attn, ns_logits, ns_values
             
             # TD target: r + γ * V(s')
             targets = rewards + args.gamma * next_values
             
             # MSE loss between V(s) and TD target
             loss = nn.functional.mse_loss(values, targets.detach())
-            
-            opt.zero_grad()
+            loss = loss / accum_steps
             loss.backward()
-            opt.step()
             
-            epoch_loss += loss.item()
+            if (batch_idx + 1) % accum_steps == 0:
+                opt.step()
+                opt.zero_grad()
+                global_step += 1
+                
+                if args.wandb_project and wandb is not None:
+                    wandb.log({"td0/loss": loss.item() * accum_steps, "td0/step": global_step})
+            
+            epoch_loss += loss.item() * accum_steps
             num_batches += 1
-            global_step += 1
             
-            if args.wandb_project and wandb is not None:
-                wandb.log({"td0/loss": loss.item(), "td0/step": global_step})
+            del input_ids, attn, logits, values, loss
+            if batch_idx % 100 == 0:
+                torch.cuda.empty_cache()
+        
+        if num_batches % accum_steps != 0:
+            opt.step()
+            opt.zero_grad()
         
         avg_loss = epoch_loss / max(num_batches, 1)
         print(f"[TD0] Epoch {epoch}: avg_loss = {avg_loss:.4f}")
@@ -285,17 +327,30 @@ def train_mc(model: ValueModel, pairs: List[tuple], args, device):
         V(s) <- V(s) + α * [G - V(s)]
     
     We use MSE loss: L = (V(s) - G)^2
+    
+    Uses gradient accumulation for memory efficiency.
     """
     ds = MCDataset(pairs)
-    loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True, collate_fn=collate_mc)
+    loader = DataLoader(
+        ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        collate_fn=collate_mc,
+        num_workers=args.num_workers,
+        pin_memory=True,
+    )
     opt = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
+    
+    # Gradient accumulation to simulate larger batches
+    accum_steps = args.gradient_accumulation_steps
     
     global_step = 0
     for epoch in range(args.epochs):
         epoch_loss = 0.0
         num_batches = 0
+        opt.zero_grad()
         
-        for states, targets in loader:
+        for batch_idx, (states, targets) in enumerate(loader):
             targets = torch.tensor(targets, dtype=torch.float32, device=device)
             
             input_ids, attn = model.encode(states, device)
@@ -303,17 +358,29 @@ def train_mc(model: ValueModel, pairs: List[tuple], args, device):
             values = torch.sigmoid(logits)  # V(s) in [0, 1]
             
             loss = nn.functional.mse_loss(values, targets)
-            
-            opt.zero_grad()
+            loss = loss / accum_steps  # Scale for accumulation
             loss.backward()
-            opt.step()
             
-            epoch_loss += loss.item()
+            if (batch_idx + 1) % accum_steps == 0:
+                opt.step()
+                opt.zero_grad()
+                global_step += 1
+                
+                if args.wandb_project and wandb is not None:
+                    wandb.log({"mc/loss": loss.item() * accum_steps, "mc/step": global_step})
+            
+            epoch_loss += loss.item() * accum_steps
             num_batches += 1
-            global_step += 1
             
-            if args.wandb_project and wandb is not None:
-                wandb.log({"mc/loss": loss.item(), "mc/step": global_step})
+            # Free memory
+            del input_ids, attn, logits, values, loss
+            if batch_idx % 100 == 0:
+                torch.cuda.empty_cache()
+        
+        # Handle remaining gradients
+        if num_batches % accum_steps != 0:
+            opt.step()
+            opt.zero_grad()
         
         avg_loss = epoch_loss / max(num_batches, 1)
         print(f"[MC] Epoch {epoch}: avg_loss = {avg_loss:.4f}")
@@ -339,12 +406,15 @@ def train_td_lambda(model: ValueModel, episodes: Sequence[dict], args, device):
     """
     opt = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
     
+    accum_steps = args.gradient_accumulation_steps
+    
     global_step = 0
     for epoch in range(args.epochs):
         epoch_loss = 0.0
         num_episodes = 0
+        opt.zero_grad()
         
-        for ep in episodes:
+        for ep_idx, ep in enumerate(episodes):
             states = ep["states"]
             R = ep["reward"]
             T = len(states)
@@ -380,17 +450,27 @@ def train_td_lambda(model: ValueModel, episodes: Sequence[dict], args, device):
             
             # MSE loss between V(s) and λ-returns
             loss = nn.functional.mse_loss(values, lambda_returns)
-            
-            opt.zero_grad()
+            loss = loss / accum_steps
             loss.backward()
-            opt.step()
             
-            epoch_loss += loss.item()
+            if (ep_idx + 1) % accum_steps == 0:
+                opt.step()
+                opt.zero_grad()
+                global_step += 1
+                
+                if args.wandb_project and wandb is not None:
+                    wandb.log({"td_lambda/loss": loss.item() * accum_steps, "td_lambda/step": global_step})
+            
+            epoch_loss += loss.item() * accum_steps
             num_episodes += 1
-            global_step += 1
             
-            if args.wandb_project and wandb is not None:
-                wandb.log({"td_lambda/loss": loss.item(), "td_lambda/step": global_step})
+            del input_ids, attn, logits, values, lambda_returns, loss
+            if ep_idx % 100 == 0:
+                torch.cuda.empty_cache()
+        
+        if num_episodes % accum_steps != 0:
+            opt.step()
+            opt.zero_grad()
         
         avg_loss = epoch_loss / max(num_episodes, 1)
         print(f"[TD(λ)] Epoch {epoch}: avg_loss = {avg_loss:.4f}")
@@ -407,14 +487,21 @@ def evaluate(model: ValueModel, episodes: List[dict], args, device, split_name: 
         return None
     
     ds = MCDataset(pairs)
-    loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, collate_fn=collate_mc)
+    loader = DataLoader(
+        ds, 
+        batch_size=args.batch_size, 
+        shuffle=False, 
+        collate_fn=collate_mc,
+        num_workers=args.num_workers,
+        pin_memory=True,
+    )
     
     total_loss = 0.0
     total_count = 0
     
     model.eval()
     with torch.no_grad():
-        for states, targets in loader:
+        for batch_idx, (states, targets) in enumerate(loader):
             targets = torch.tensor(targets, dtype=torch.float32, device=device)
             input_ids, attn = model.encode(states, device)
             logits = model(input_ids, attn)
@@ -423,6 +510,10 @@ def evaluate(model: ValueModel, episodes: List[dict], args, device, split_name: 
             loss = nn.functional.mse_loss(values, targets, reduction='sum')
             total_loss += loss.item()
             total_count += len(states)
+            
+            del input_ids, attn, logits, values
+            if batch_idx % 100 == 0:
+                torch.cuda.empty_cache()
     
     model.train()
     
@@ -494,6 +585,18 @@ def parse_args():
     parser.add_argument("--freeze-base", action="store_true", help="Freeze transformer weights.")
     parser.add_argument("--wandb-project", default=None, help="If set, log metrics to this W&B project.")
     parser.add_argument("--save-path", default=None, help="Path to save trained model.")
+    
+    # Memory optimization arguments
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=4, 
+                        help="Number of gradient accumulation steps.")
+    parser.add_argument("--max-length", type=int, default=1024,
+                        help="Max sequence length for tokenization.")
+    parser.add_argument("--num-workers", type=int, default=4,
+                        help="DataLoader workers.")
+    parser.add_argument("--use-bf16", action="store_true", default=True,
+                        help="Use bfloat16 for base model.")
+    parser.add_argument("--no-bf16", action="store_false", dest="use_bf16",
+                        help="Disable bfloat16.")
 
     if config_defaults:
         parser.set_defaults(**config_defaults)
@@ -519,7 +622,12 @@ def main():
         print(f"Loaded {len(test_episodes)} test episodes")
 
     print(f"Initializing value model from {args.model_name}")
-    model = ValueModel(args.model_name, freeze_base=args.freeze_base).to(device)
+    model = ValueModel(
+        args.model_name, 
+        freeze_base=args.freeze_base,
+        use_bf16=args.use_bf16,
+        max_length=args.max_length,
+    ).to(device)
 
     if args.algo in ("td0", "all"):
         print("\n=== Training with TD(0) ===")
