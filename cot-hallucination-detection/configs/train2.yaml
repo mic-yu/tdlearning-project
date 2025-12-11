@@ -1,0 +1,87 @@
+# Optimized training configuration for CoT value function learning
+# Save as: config.yaml
+# Usage: python train.py --config config.yaml
+
+# Data paths
+train_path: data/qwen-train.csv
+test_path: data/qwen-test.csv
+
+# Base model
+model_name: Qwen/Qwen2.5-3B-Instruct
+
+# Algorithm selection
+# Options: td0, tdlambda, mc, all
+# Recommendation: Start with 'mc' for most stable training, then try 'td0'
+algo: mc
+
+# Discount factor (gamma)
+# 0.99 is good for long episodes where future matters
+# 1.0 for pure terminal reward propagation (simpler, try this first)
+gamma: 1.0
+
+# TD(lambda) parameter (only used if algo includes tdlambda)
+# 0.9 = blend of TD and MC (good default)
+# Higher lambda = more Monte Carlo-like
+lmbda: 0.9
+
+# Training hyperparameters
+epochs: 10              # Increased from 3 - need more passes for convergence
+batch_size: 32          # Increased from 8 - more stable gradients
+lr: 5.0e-5              # Reduced from 1e-4 - gentler updates prevent oscillation
+
+# Hardware
+device: cuda
+
+# Model architecture - Base transformer
+freeze_base: true       # Keep true for efficiency
+unfreeze_last_n_layers: 2  # NEW: Fine-tune last 2 layers for better adaptation
+
+# Model architecture - Pooling
+# Options: mean (recommended), last_token, attention, cls
+# mean: Average all tokens (robust, works well for reasoning steps)
+# last_token: Use final token (good for sequential reasoning)
+# attention: Learnable attention (more parameters, may overfit)
+pooling_strategy: mean
+
+# Model architecture - Value head
+head_hidden: 512        # Width of value head hidden layers
+head_layers: 3          # NEW: Depth of value head (1-5, 3 is good default)
+head_dropout: 0.1       # Dropout rate for regularization
+attn_heads: 4           # Only used if pooling_strategy is 'attention'
+
+# Logging
+wandb_project: td-learning
+
+
+# ============================================================================
+# ALTERNATIVE CONFIGS - Uncomment sections to try different setups
+# ============================================================================
+
+# --- AGGRESSIVE TRAINING (if you have time and want best performance) ---
+# epochs: 20
+# batch_size: 64
+# lr: 3.0e-5
+# unfreeze_last_n_layers: 4
+# head_layers: 4
+
+# --- FAST DEBUGGING (quick iteration to test if code works) ---
+# epochs: 2
+# batch_size: 16
+# lr: 1.0e-4
+# unfreeze_last_n_layers: 0
+# head_layers: 2
+
+# --- FULLY UNFROZEN (maximum capacity, slow training) ---
+# freeze_base: false
+# epochs: 5
+# lr: 1.0e-5
+# batch_size: 16  # Reduce batch size due to memory constraints
+
+# --- LAST TOKEN POOLING (alternative to mean) ---
+# pooling_strategy: last_token
+# head_layers: 4  # Compensate with deeper head
+
+# --- LEARNED ATTENTION POOLING (most expressive, may overfit) ---
+# pooling_strategy: attention
+# attn_heads: 8
+# head_dropout: 0.2  # More dropout to prevent overfitting

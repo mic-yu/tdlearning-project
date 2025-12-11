@@ -12,4 +12,4 @@ freeze_base: true
 head_hidden: 512
 head_dropout: 0.1
 attn_heads: 4
-wandb_project: td-learning  # set to your W&B project name to enable logging
+wandb_project: td-learning 
