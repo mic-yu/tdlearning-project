@@ -23,10 +23,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModel, AutoTokenizer
 
-try:
-    import wandb
-except ImportError:
-    wandb = None
+import wandb
 
 
 # ============================================================================
