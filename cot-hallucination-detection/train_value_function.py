@@ -125,8 +125,7 @@ class ValueModel(nn.Module):
         attn_out, _ = self.attn(query, hidden, hidden, key_padding_mask=key_padding_mask)
         pooled = attn_out.squeeze(1)  # (B, H)
         logits = self.value_head(pooled).squeeze(-1)  # (B,)
-        probs = torch.sigmoid(logits)  # interpret as probability of incorrect final answer
-        return probs
+        return logits
 
     def encode(self, texts: List[str], device: torch.device):
         """Tokenize a batch of strings to tensors on the target device."""
@@ -190,29 +189,30 @@ def train_td0(model: ValueModel, transitions: List[tuple], args, device):
     ds = TransitionDataset(transitions)
     loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True, collate_fn=collate_transitions)
     opt = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
-    mse = nn.MSELoss()
+    bce = nn.BCEWithLogitsLoss()
     step = 0
     for epoch in range(args.epochs):
         for batch in loader:
             states, next_states, rewards = batch
             rewards = torch.tensor(rewards, dtype=torch.float32, device=device)
             input_ids, attn = model.encode(list(states), device)
-            values = model(input_ids, attn)
+            logits = model(input_ids, attn)
 
-            next_values = torch.zeros_like(values)
-            mask = torch.zeros_like(values)
+            next_probs = torch.zeros_like(logits)
+            mask = torch.zeros_like(logits)
             if any(next_states):
                 valid_indices = [i for i, ns in enumerate(next_states) if ns is not None]
                 if valid_indices:
                     ns_texts = [next_states[i] for i in valid_indices]
                     ns_ids, ns_attn = model.encode(ns_texts, device)
-                    ns_values = model(ns_ids, ns_attn).detach()
-                    for idx, v in zip(valid_indices, ns_values):
-                        next_values[idx] = v
+                    ns_logits = model(ns_ids, ns_attn).detach()
+                    ns_probs = torch.sigmoid(ns_logits)
+                    for idx, v in zip(valid_indices, ns_probs):
+                        next_probs[idx] = v
                         mask[idx] = 1.0
 
-            targets = rewards + args.gamma * next_values * mask
-            loss = mse(values, targets)
+            targets = rewards + args.gamma * next_probs * mask
+            loss = bce(logits, targets)
 
             opt.zero_grad()
             loss.backward()
@@ -230,7 +230,7 @@ def eval_mc(model: ValueModel, pairs: List[tuple], args, device, split_name: str
         return None
     ds = MCDataset(pairs)
     loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False)
-    mse = nn.MSELoss(reduction="mean")
+    bce = nn.BCEWithLogitsLoss(reduction="mean")
     total_loss = 0.0
     total_count = 0
     with torch.no_grad():
@@ -238,8 +238,8 @@ def eval_mc(model: ValueModel, pairs: List[tuple], args, device, split_name: str
             states, targets = batch
             targets = torch.tensor(targets, dtype=torch.float32, device=device)
             input_ids, attn = model.encode(list(states), device)
-            values = model(input_ids, attn)
-            loss = mse(values, targets)
+            logits = model(input_ids, attn)
+            loss = bce(logits, targets)
             total_loss += loss.item() * len(states)
             total_count += len(states)
     avg_loss = total_loss / max(total_count, 1)
@@ -254,15 +254,15 @@ def train_mc(model: ValueModel, pairs: List[tuple], args, device):
     ds = MCDataset(pairs)
     loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True)
     opt = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
-    mse = nn.MSELoss()
+    bce = nn.BCEWithLogitsLoss()
     step = 0
     for epoch in range(args.epochs):
         for batch in loader:
             states, targets = batch
             targets = torch.tensor(targets, dtype=torch.float32, device=device)
             input_ids, attn = model.encode(list(states), device)
-            values = model(input_ids, attn)
-            loss = mse(values, targets)
+            logits = model(input_ids, attn)
+            loss = bce(logits, targets)
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -275,7 +275,7 @@ def train_mc(model: ValueModel, pairs: List[tuple], args, device):
 def train_td_lambda(model: ValueModel, episodes: Sequence[dict], args, device):
     """Forward-view TD(lambda) with bootstrap on next-state value."""
     opt = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
-    mse = nn.MSELoss()
+    bce = nn.BCEWithLogitsLoss()
     step = 0
     for epoch in range(args.epochs):
         for ep in episodes:
@@ -285,20 +285,20 @@ def train_td_lambda(model: ValueModel, episodes: Sequence[dict], args, device):
 
             # Predict current values
             ids, attn = model.encode(states, device)
-            values = model(ids, attn)
-            values_detached = values.detach()
+            logits = model(ids, attn)
+            probs_detached = torch.sigmoid(logits.detach())
 
             # Compute lambda-returns (forward view with bootstrap on next value)
             T = len(states)
             lambda_returns = [0.0] * T
             next_return = 0.0
             for t in reversed(range(T)):
-                v_next = values_detached[t + 1] if t + 1 < T else torch.tensor(0.0, device=device)
+                v_next = probs_detached[t + 1] if t + 1 < T else torch.tensor(0.0, device=device)
                 next_return = rewards[t] + args.gamma * ((1 - args.lmbda) * v_next + args.lmbda * next_return)
                 lambda_returns[t] = next_return
             targets = torch.stack(lambda_returns)
 
-            loss = mse(values, targets)
+            loss = bce(logits, targets)
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -364,7 +364,7 @@ def parse_args():
     parser.add_argument("--gamma", type=float, default=1.0)
     parser.add_argument("--lmbda", type=float, default=0.9)
     parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--freeze-base", action="store_true", help="Freeze transformer weights.")

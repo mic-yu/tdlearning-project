@@ -67,8 +67,9 @@ def batch_predict(model: ValueModel, texts: Sequence[str], device: torch.device,
         for i in range(0, len(texts), batch_size):
             chunk = texts[i : i + batch_size]
             ids, attn = model.encode(chunk, device)
-            values = model(ids, attn)
-            preds.extend(values.cpu().tolist())
+            logits = model(ids, attn)
+            probs = torch.sigmoid(logits)
+            preds.extend(probs.cpu().tolist())
     return preds
 
 
