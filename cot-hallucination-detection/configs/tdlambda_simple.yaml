@@ -1,0 +1,20 @@
+# TD(λ) Policy Evaluation Config
+# Dataset: ~70k reasoning traces, ~20k incorrect (≈29% error rate)
+
+algo: tdlambda
+
+# Model
+model-name: "Qwen/Qwen2.5-3B-Instruct"
+freeze-base: true
+
+# Core hyperparameters
+gamma: .99        # No discounting
+lmbda: 0.95        # High λ - lean toward MC returns, slight bootstrap smoothing
+epochs: 4          # Between TD(0) and MC
+batch-size: 1      # Process one episode at a time (required by current impl)
+lr: 1e-4           # Conservative - λ-returns still have bootstrap component
+
+# Infrastructure
+device: "cuda"
+wandb-project: "td-learning"
+save-path: "checkpoints/td_lambda_value_model.pt"

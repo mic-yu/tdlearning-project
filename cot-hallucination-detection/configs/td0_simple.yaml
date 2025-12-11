@@ -1,0 +1,19 @@
+# TD(0) Policy Evaluation Config
+# Dataset: ~70k reasoning traces, ~20k incorrect (≈29% error rate)
+
+algo: td0
+
+# Model
+model-name: "Qwen/Qwen2.5-3B-Instruct"
+freeze-base: true
+
+# Core hyperparameters
+gamma: .99         # No discounting
+epochs: 5          # More epochs needed - TD(0) has higher variance per update
+batch-size: 64     # Larger batches help stabilize bootstrap targets
+lr: 1e-4           # Lower LR - bootstrap introduces non-stationarity
+
+# Infrastructure
+device: "cuda"
+wandb-project: "td-learning"
+save-path: "checkpoints/td0_value_model.pt"

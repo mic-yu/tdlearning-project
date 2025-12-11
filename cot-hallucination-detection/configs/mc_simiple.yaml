@@ -15,5 +15,5 @@ lr: 3e-4           # Standard for Adam with frozen base + small head
 
 # Infrastructure
 device: "cuda"
-wandb-project: "cot-mrp-value"
+wandb-project: "td-learning"
 save-path: "checkpoints/mc_value_model.pt"
