@@ -163,6 +163,12 @@ class TransitionDataset(Dataset):
         return self.transitions[idx]
 
 
+def collate_transitions(batch):
+    """Keep None for terminal next_state; return tuple of lists."""
+    states, next_states, rewards = zip(*batch)
+    return list(states), list(next_states), list(rewards)
+
+
 class MCDataset(Dataset):
     def __init__(self, pairs: List[tuple]):
         self.pairs = pairs
@@ -182,7 +188,7 @@ class MCDataset(Dataset):
 def train_td0(model: ValueModel, transitions: List[tuple], args, device):
     """One-step TD policy evaluation."""
     ds = TransitionDataset(transitions)
-    loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True)
+    loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True, collate_fn=collate_transitions)
     opt = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
     mse = nn.MSELoss()
     step = 0
