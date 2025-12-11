@@ -27,11 +27,7 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModel, AutoTokenizer
 
-try:
-    import wandb
-except ImportError:
-    wandb = None
-
+import wandb
 
 # -----------------------------
 # Data utils
