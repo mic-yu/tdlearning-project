@@ -10,7 +10,7 @@ freeze-base: true  # Start frozen; fine-tune later if needed
 # Core hyperparameters
 gamma: 1.0         # No discounting - all steps equally predict final outcome
 epochs: 3          # 3 passes through 70k examples
-batch-size: 16     # Balance between gradient stability and memory
+batch-size: 32    # Balance between gradient stability and memory
 lr: 3e-4           # Standard for Adam with frozen base + small head
 
 # Infrastructure
