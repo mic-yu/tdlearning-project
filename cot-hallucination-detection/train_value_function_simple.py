@@ -27,7 +27,11 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModel, AutoTokenizer
 
-import wandb
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
 
 # -----------------------------
 # Data utils
@@ -126,11 +130,24 @@ class ValueModel(nn.Module):
         
         # Load base model in bfloat16 to save memory
         dtype = torch.bfloat16 if use_bf16 else torch.float32
-        self.base = AutoModel.from_pretrained(
-            base_model_name,
-            torch_dtype=dtype,
-            attn_implementation="flash_attention_2",  # Much more memory efficient
-        )
+        
+        # Try Flash Attention 2, fall back to SDPA, then eager
+        attn_impl = None
+        for impl in ["flash_attention_2", "sdpa", "eager"]:
+            try:
+                self.base = AutoModel.from_pretrained(
+                    base_model_name,
+                    torch_dtype=dtype,
+                    attn_implementation=impl,
+                )
+                attn_impl = impl
+                break
+            except (ImportError, ValueError) as e:
+                if impl == "eager":
+                    raise  # Last resort failed
+                continue
+        
+        print(f"Using attention implementation: {attn_impl}")
         
         if freeze_base:
             self.base.eval()  # Permanently in eval mode
@@ -528,7 +545,7 @@ def evaluate(model: ValueModel, episodes: List[dict], args, device, split_name: 
 
 
 def load_config_file(path: str) -> Dict[str, Any]:
-    """Load JSON or YAML config dict."""
+    """Load JSON or YAML config dict, converting kebab-case keys to snake_case."""
     if not path:
         return {}
     cfg_path = Path(path)
@@ -540,8 +557,12 @@ def load_config_file(path: str) -> Dict[str, Any]:
     except ImportError:
         yaml = None
     if yaml is not None and cfg_path.suffix.lower() in {".yml", ".yaml"}:
-        return yaml.safe_load(text) or {}
-    return json.loads(text)
+        raw = yaml.safe_load(text) or {}
+    else:
+        raw = json.loads(text)
+    
+    # Convert kebab-case to snake_case for argparse compatibility
+    return {k.replace("-", "_"): v for k, v in raw.items()}
 
 
 def parse_args():
@@ -604,10 +625,26 @@ def main():
     args = parse_args()
     device = torch.device(args.device)
 
-    if args.wandb_project and wandb is not None:
-        wandb.init(project=args.wandb_project, config=vars(args))
+    # Debug: print config
+    print("=" * 50)
+    print("Configuration:")
+    for k, v in vars(args).items():
+        print(f"  {k}: {v}")
+    print("=" * 50)
 
-    print(f"Loading training data from {args.train_path}")
+    # Initialize wandb
+    if args.wandb_project:
+        if wandb is None:
+            print("WARNING: wandb not installed, skipping logging. Install with: pip install wandb")
+        else:
+            try:
+                run = wandb.init(project=args.wandb_project, config=vars(args))
+                print(f"Wandb initialized: {run.url}")
+            except Exception as e:
+                print(f"WARNING: Failed to initialize wandb: {e}")
+                print("Continuing without wandb logging...")
+
+    print(f"\nLoading training data from {args.train_path}")
     train_episodes = load_episodes(args.train_path, use_parsed_only=True)
     print(f"Loaded {len(train_episodes)} training episodes")
     
