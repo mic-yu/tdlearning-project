@@ -23,8 +23,10 @@ class GoalNet(nn.Module):
         self.model = nn.Sequential(*layers)
         self.sig = nn.Sigmoid()
 
-    def forward(self, x):
+    def forward(self, x, sig=True):
         if self.training:
             return self.model(x)
-        else:
+        elif sig == True:
             return self.sig(self.model(x))
+        else:
+            return self.model(x)

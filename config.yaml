@@ -1,5 +1,6 @@
 mode: "wandb_sweep" #or "single_run" #or "sweep"
-path: ./data/EM_td_ep_100.pkl #./data/n_eps-500-env-base_agent_env_2025-11-26_16-18-29.pkl
+domain: "committor" #or robocup
+path: ./data/EM_td_ep_100.pkl #/data/n_eps-500-env-base_agent_env_2025-11-26_16-18-29.pkl #./data/EM_td_ep_100.pkl 
 #"./data/n_eps-100-env-base_agent_env_2025-11-06_21-07-54.pkl" #training data path
 model_storage_dir: "models"
 chtc: False
@@ -10,18 +11,19 @@ train_forward_sig: False #Manually pass outputs of model during training through
                         #It is always turned off for the model.
 eval_frequency: 5 #Evaluation will happen every eval_frequency epochs during training
 train_loss_frequency: 1000 #Report running avg loss after this inteverval of steps
-loss_fn: "BCE"
+loss_fn: "MSE"
 optimizer: "Adam"
+#final_value: "best_val_ba"
 
 wandb:
   entity: "dpinchuk-university-of-wisconsin-madison"
-  project: "td_committor_ep100" #"td_abs_inf_500ep" #"td_test"
+  project: "td_committor_ep100" #"td_abs_inf_500ep_MSE" #"td_committor_ep100" #"td_abs_inf_500ep" #"td_test"
 
 wandb_sweep:
-  name: "ep_100_l5_BCE" #"ep_100_abs_l5_BCE"
+  name: "ep_100_l5_MSE" #"ep_100_abs_l5_BCE"
   n_layers: 5
-  sweep_id: "b45t4g0f" #ux0zd8ly #"fq8srmh7"
-  count: 1
+  sweep_id: "h210preq" #"51nmbbex" #"b45t4g0f" #ux0zd8ly #"fq8srmh7"
+  count: 100
 
 optuna_settings:
   study_name: "tdgoal_h100_ep100_epoch200"
@@ -37,8 +39,8 @@ search_space:
   bs_range: [32, 512] #batch size range
   bs_step: 32
   lr_range: [1e-5, 1e-2]
-  target_update_frequency_range: [50, 1000] #steps. 
-  tuf_step: 1000
+  target_update_frequency_range: [10, 1000] #steps. 
+  tuf_step: 10
 
 single_run:
   n_layers: 2 #hidden layers

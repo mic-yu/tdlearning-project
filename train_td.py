@@ -85,13 +85,16 @@ def train_td(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
     #Training loop
     step = 0
     best_val_ba = 0.0
+    best_val_loss = torch.tensor(float('inf'))
+    train_avg_v = 0.0
+    running_avg = 0.0
+    running_count = 0
+    gradient_avg = 0.0
     targetModel = copy.deepcopy(model)
     targetModel.eval()
     targetModel.to(device=params["device"])
     start_time = time.time()
     for epoch in range(num_epochs): 
-        running_avg = 0.0
-        running_count = 0
         model.train()
         for batch, in trainDataLoader:
             X, Y = get_target_from_batch_inf(batch, targetModel, cfg, params)
@@ -103,42 +106,58 @@ def train_td(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
             loss = loss_fn(outputs, Y)
             #print(f"Step: {step} Loss: {loss.item()}")
             loss.backward()
+
+            batch_avg_gradient = grad_norm(model)
             optimizer.step()
+            with torch.no_grad():
+                batch_avg_v = outputs.mean().item()
+               
+                
             
             running_avg = running_avg*running_count + loss.item()*X.size(dim=0)
+            train_avg_v = train_avg_v * running_count + batch_avg_v*X.size(dim=0)
+            gradient_avg = gradient_avg * running_count + batch_avg_gradient*X.size(dim=0)
+
             running_count = running_count + X.size(dim=0)
             running_avg = running_avg/running_count
+            train_avg_v = train_avg_v / running_count
+            gradient_avg = gradient_avg / running_count
 
             step = step + 1
             if (step + 1) % cfg.train_loss_frequency == 0:
                 #print(f"Epoch: {epoch} Step: {step} Loss: {running_avg}")
                 wb_run.log({"train/loss": running_avg,
                            "optimization step": step,
+                           "train/avg_v": train_avg_v,
+                           "train/gradient_avg": gradient_avg
                            })
                 running_avg = 0.0
+                train_avg_v = 0.0
+                gradient_avg = 0.0
                 running_count = 0
             if step % params["target_update_frequency"] == 0:
                 targetModel = copy.deepcopy(model)
                 targetModel.eval()
                 targetModel.to(device=params["device"])
         if (epoch + 1) % cfg.eval_frequency == 0:
-            val_loss, conf_mx = eval(model, valDataLoader, params["loss_fn"])
+            val_loss, conf_mx, eval_avg_v = eval(model, valDataLoader, params["loss_fn"], nn_sig=False)
             if trial is not None:
                 trial.report(-val_loss, epoch)
             BA = get_ba_from_conf(*conf_mx.ravel())
             elapsed_time = (time.time() - start_time) / 60
-            if BA >= best_val_ba:
+            if val_loss <= best_val_loss:
                 torch.save(model.state_dict(), best_model_path)
-                wb_run.summary["Best BA"] = BA
+                wb_run.summary["Best eval loss"] = val_loss
                 wb_run.summary["Best Epoch"] = epoch
-                best_val_ba = BA
+                best_val_loss = val_loss
             wandb_report = {"epoch": epoch,
                 "optimization step": step,
                 "train/loss": running_avg,
                 "validation/loss": val_loss,
                 "validation/Balanced Accuracy": BA,
+                "validation/avg_v": eval_avg_v,
                 "Elapsed Time Minutes": elapsed_time,
-                "best_val_ba": best_val_ba
+                "best_val_loss": best_val_loss
                 }
             wb_run.log(wandb_report)
                 
@@ -167,21 +186,23 @@ def train_td(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
 
     return model
 
-def eval(model, valDataLoader, loss_fn):
+def eval(model, valDataLoader, loss_fn, nn_sig=True):
     """
     Evaluate model on validation set. Return average loss, confusion matrix and recall.
     """
     model.eval()
     running_avg = 0.0
     running_count = 0
+    avg_v = 0.0
 
     conf_mx = np.zeros((2,2), dtype=np.int64)
 
     with torch.no_grad():
         for X, Y in valDataLoader:
-            outputs = model(X)
+            outputs = model(X, sig=nn_sig)
             loss = loss_fn(outputs, Y)
 
+            batch_avg_v = outputs.mean().item()
 
             outputs = outputs.squeeze()
             outputs = (outputs > 0.5).float()
@@ -193,12 +214,31 @@ def eval(model, valDataLoader, loss_fn):
             #print("Y.shape: ", Y.shape)
 
             running_avg = running_avg*running_count + loss.item()*X.size(dim=0)
+            avg_v = avg_v * running_count + batch_avg_v*X.size(dim=0)
+
             running_count = running_count + X.size(dim=0)
             running_avg = running_avg/running_count
+            avg_v = avg_v / running_count
 
+            
+            size_y = Y.size()
+            size_outputs = outputs.size()
+            if size_y[0] <= 1 or size_outputs[0] <= 1:
+                print("size_y: ", size_y)
+                print("size_outputs: ", size_outputs)
             mx = confusion_matrix(Y.squeeze().int().numpy(force=True), outputs.int().numpy(force=True), labels=[0, 1])
             conf_mx = conf_mx + mx
             
 
             
-    return running_avg, conf_mx
+    return running_avg, conf_mx, avg_v
+
+
+def grad_norm(model):
+    total = 0.0
+    count = 0
+    for p in model.parameters():
+        if p.grad is not None:
+            total += p.grad.detach().norm().item()
+            count += 1
+    return total / count if count > 0 else 0.0

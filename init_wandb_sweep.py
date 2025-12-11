@@ -33,7 +33,7 @@ def run(cfg):
         "project": cfg.wandb.project,
         "method": "bayes",
         "name": cfg.wandb_sweep.name,
-        "metric": {"goal": "maximize", "name": "best_val_ba"},
+        "metric": {"goal": "minimize", "name": "best_val_ba"},
         "parameters": parameters
     }
     

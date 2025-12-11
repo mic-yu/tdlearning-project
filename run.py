@@ -27,8 +27,7 @@ def set_seed(seed=37):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-
-def wandb_sweep_objective(hydra_cfg):
+def wandb_sweep_objective_committor(hydra_cfg):
     """
     Objective for wandb sweep to optimize
     
@@ -108,15 +107,106 @@ def wandb_sweep_objective(hydra_cfg):
 
     params["device"] = device
     trainedModel = train_td(None, wb_run, myModel, trainList, valDataLoader, hydra_cfg, params)
-    final_loss, conf_mx = eval(trainedModel, valDataLoader, loss_fn)
+    final_loss, conf_mx, _ = eval(trainedModel, valDataLoader, loss_fn)
     BA = get_ba_from_conf(*conf_mx.ravel())
 
     wb_run.summary["Final BA"] = BA
     wb_run.summary["Final eval loss"] = final_loss
-    best_val_ba = wb_run.summary["Best BA"]
+    best_val_loss = wb_run.summary["Best eval loss"]
     wb_run.finish()
     
-    return best_val_ba
+    return best_val_loss
+
+def wandb_sweep_objective(hydra_cfg):
+    """
+    Objective for wandb sweep to optimize
+    
+    Args: 
+        hydra_cfg: hydra config containing params
+
+    Returns: 
+        float: value of objective (best balanced accuracy of over training)
+    """
+    
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    wb_config = OmegaConf.to_container(hydra_cfg) #do I still need this?
+    wandb_kwargs = {
+        "entity": hydra_cfg.wandb.entity,
+        "project": hydra_cfg.wandb.project,
+        }
+    wb_run = wandb.init(**wandb_kwargs)
+    wb_run.name = current_time + "_" + wb_run.id
+    run_name = wb_run.name
+
+
+    param_config = wandb.config 
+   
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    model_storage_dir = hydra_cfg.model_storage_dir
+    sweep_name = hydra_cfg.wandb_sweep.name
+    if hydra_cfg.chtc == False:
+        model_storage_dir = os.path.join(model_storage_dir, sweep_name)
+    os.makedirs(model_storage_dir, exist_ok=True)
+    model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}.pth".format(sweep_name, run_name))
+    best_model_storage_path = os.path.join(model_storage_dir, "{}_trial_{}_best.pth".format(sweep_name, run_name))
+
+    #initialize hyperparameters
+    n_layers = hydra_cfg.wandb_sweep.n_layers
+    hidden_sizes = []
+    for i in range(n_layers):
+        hidden_sizes.append(param_config[f"neurons_layer_{i}"])
+    lr = param_config["lr"]
+    batch_size = param_config["bs"]  
+    target_update_frequency = param_config["target_update_frequency"]
+
+
+    if hydra_cfg.loss_fn == "MSE":
+        loss_fn = nn.MSELoss()
+    elif hydra_cfg.loss_fn == "BCE":
+        loss_fn = nn.BCEWithLogitsLoss()
+    else:
+        loss_fn = None
+        message = f"cfg.loss_fn {hydra_cfg.loss_fn} is not implemented."
+        raise ValueError(message)
+
+    params = {"n_layers": n_layers, 
+              "hidden_sizes": hidden_sizes, 
+              "lr": lr, 
+              "bs": batch_size,
+              "loss_fn": loss_fn,
+              "model_storage_path": model_storage_path,
+              "best_model_storage_path": best_model_storage_path,
+              "target_update_frequency": target_update_frequency
+              }
+
+    #Data
+    trainList, _, _ = get_abs_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split, ep_np=False, preprocess=True)
+    #valData = get_val_data(valList, hydra_cfg).to(device=device)
+    #valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
+    _, valDataset, _ = load_abs_datasets(hydra_cfg.path, hydra_cfg.train_val_test_split, -1, device=device, preprocess=True)
+    generator = torch.Generator().manual_seed(37)
+    valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True, generator=generator)
+
+    #training
+    input_size = trainList[0].size(dim=1) - 1
+    myModel = GoalNet(input_size, hidden_sizes).to(device=device)
+
+    params["input_size"] = input_size
+    
+    wb_run.config.update({"hydra_config": OmegaConf.to_container(hydra_cfg), "params": params})
+
+    params["device"] = device
+    trainedModel = train_td(None, wb_run, myModel, trainList, valDataLoader, hydra_cfg, params)
+    final_loss, conf_mx, _ = eval(trainedModel, valDataLoader, loss_fn)
+    BA = get_ba_from_conf(*conf_mx.ravel())
+
+    wb_run.summary["Final BA"] = BA
+    wb_run.summary["Final eval loss"] = final_loss
+    best_val_loss = wb_run.summary["Best eval loss"]
+    wb_run.finish()
+    
+    return best_val_loss
 
 
 def single_objective(cfg, trial=None):
@@ -312,8 +402,15 @@ def run(cfg):
         partial_objective = partial(objective,  cfg=cfg)
     elif cfg.mode == "single_run":
         partial_objective = partial(single_objective, cfg=cfg)
-    elif cfg.mode == "wandb_sweep":
+    elif cfg.mode == "wandb_sweep" and cfg.domain == "robocup":
         partial_function = partial(wandb_sweep_objective, hydra_cfg=cfg)
+        wandb.agent(sweep_id = cfg.wandb_sweep.sweep_id, 
+                    function=partial_function,
+                    entity=cfg.wandb.entity,
+                    project=cfg.wandb.project,
+                    count=cfg.wandb_sweep.count)
+    elif cfg.mode == "wandb_sweep" and cfg.domain == "committor":
+        partial_function = partial(wandb_sweep_objective_committor, hydra_cfg=cfg)
         wandb.agent(sweep_id = cfg.wandb_sweep.sweep_id, 
                     function=partial_function,
                     entity=cfg.wandb.entity,
