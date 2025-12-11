@@ -1,0 +1,117 @@
+# Optimal TD(λ) Configuration
+# Save as: config_tdlambda.yaml
+# Usage: python train.py --config config_tdlambda.yaml
+#
+# TD(λ) interpolates between TD(0) and Monte Carlo, offering a good balance
+# of sample efficiency and stability. Lambda controls this trade-off.
+
+# Data paths
+train_path: data/qwen-train.csv
+test_path: data/qwen-test.csv
+
+# Base model
+model_name: Qwen/Qwen2.5-3B-Instruct
+
+# Algorithm
+algo: tdlambda
+
+# Discount factor
+# TD(λ) is less sensitive to gamma than TD(0) due to eligibility traces
+# 0.98-0.99 works well for most problems
+gamma: 0.98
+
+# Lambda parameter (eligibility trace decay)
+# λ=0: equivalent to TD(0) - pure bootstrapping
+# λ=1: equivalent to Monte Carlo - no bootstrapping
+# λ=0.9-0.95: sweet spot for most RL problems
+# λ=0.7-0.8: if episodes are long and you want faster learning
+lmbda: 0.92
+
+# Training hyperparameters
+epochs: 12              # TD(λ) converges faster than TD(0), slower than MC
+batch_size: 48          # Medium batch size - λ provides some stability
+lr: 4.0e-5              # Between TD(0) and MC learning rates
+
+# Hardware
+device: cuda
+
+# Model architecture - Base transformer
+freeze_base: true
+unfreeze_last_n_layers: 2
+
+# Pooling strategy
+# Mean pooling works well for TD(λ) - smooths over trajectory variations
+pooling_strategy: mean
+
+# Model architecture - Value head
+head_hidden: 640        # Medium-large head
+head_layers: 4          # Deep enough to learn eligibility trace patterns
+head_dropout: 0.12      # Moderate dropout
+attn_heads: 4
+
+# Logging
+wandb_project: td-learning
+
+# ============================================================================
+# NOTES ON TD(λ) TUNING
+# ============================================================================
+#
+# Lambda (λ) selection guide:
+# - λ=0.8-0.85: Aggressive, faster learning, less stable
+# - λ=0.9-0.95: Balanced (RECOMMENDED for most cases)
+# - λ=0.95-0.99: Conservative, more stable, slower convergence
+#
+# TD(λ) advantages over TD(0):
+# - More stable training (eligibility traces smooth updates)
+# - Better credit assignment across long trajectories
+# - Less sensitive to hyperparameters
+# - Often achieves better final performance
+#
+# TD(λ) vs Monte Carlo:
+# - Faster convergence than MC (uses bootstrapping)
+# - Better for long episodes (doesn't need full returns)
+# - Slightly more complex to tune (extra λ parameter)
+#
+# If training is unstable:
+# - Increase lambda toward 0.95-0.98 (more MC-like)
+# - Reduce learning rate to 2e-5 or 1e-5
+# - Increase batch size to 64-96
+# - Try gamma closer to 1.0
+#
+# If training is too slow:
+# - Decrease lambda toward 0.85-0.9 (more TD-like)
+# - Increase learning rate to 5e-5
+# - Can reduce epochs since convergence is faster
+#
+# ============================================================================
+
+# --- AGGRESSIVE TD(λ) (for experienced users) ---
+# epochs: 15
+# batch_size: 64
+# lr: 6.0e-5
+# gamma: 0.99
+# lmbda: 0.88
+# unfreeze_last_n_layers: 3
+# head_layers: 5
+# pooling_strategy: last_token
+
+# --- ULTRA-STABLE TD(λ) (maximize stability) ---
+# epochs: 15
+# batch_size: 96
+# lr: 2.0e-5
+# gamma: 0.99
+# lmbda: 0.96
+# unfreeze_last_n_layers: 1
+# head_layers: 3
+# head_dropout: 0.15
+# pooling_strategy: mean
+
+# --- FAST CONVERGENCE TD(λ) (if you have good data and want speed) ---
+# epochs: 8
+# batch_size: 64
+# lr: 5.0e-5
+# gamma: 0.97
+# lmbda: 0.85
+# unfreeze_last_n_layers: 2
+# head_layers: 4
+# pooling_strategy: last_token

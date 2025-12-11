@@ -1,0 +1,93 @@
+# Optimal TD(0) Configuration
+# Save as: config_td0.yaml
+# Usage: python train.py --config config_td0.yaml
+#
+# TD(0) is the most sample-efficient but requires careful hyperparameter tuning
+# for stability due to bootstrapping. This config prioritizes stability.
+
+# Data paths
+train_path: data/qwen-train.csv
+test_path: data/qwen-test.csv
+
+# Base model
+model_name: Qwen/Qwen2.5-3B-Instruct
+
+# Algorithm
+algo: td0
+
+# Discount factor
+# Use 0.95-0.99 for TD methods to give more weight to intermediate steps
+# Lower gamma = faster learning but less accurate long-term predictions
+# Higher gamma = slower learning but better captures full episode value
+gamma: 0.97
+
+# Not used for TD(0), but included for completeness
+lmbda: 0.9
+
+# Training hyperparameters - CONSERVATIVE for TD stability
+epochs: 15              # TD needs more epochs than MC to converge
+batch_size: 64          # Larger batches = more stable TD updates
+lr: 3.0e-5              # Lower than MC due to bootstrapping instability
+
+# Hardware
+device: cuda
+
+# Model architecture - Base transformer
+freeze_base: true
+unfreeze_last_n_layers: 2  # Light fine-tuning helps TD discriminate states
+
+# Pooling strategy
+# TD(0) benefits from last_token pooling since it needs to distinguish
+# between consecutive states in a trajectory
+pooling_strategy: last_token
+
+# Model architecture - Value head
+head_hidden: 768        # Larger head for TD to learn complex bootstrapped values
+head_layers: 4          # Deeper head helps with temporal credit assignment
+head_dropout: 0.15      # More dropout for TD stability
+attn_heads: 4
+
+# Logging
+wandb_project: td-learning
+
+# ============================================================================
+# NOTES ON TD(0) TUNING
+# ============================================================================
+#
+# TD(0) is sensitive to:
+# 1. Learning rate: Too high causes divergence. Start low (1e-5 to 5e-5)
+# 2. Batch size: Larger is better for stability (32-128)
+# 3. Target network updates: Handled automatically in the script
+# 4. Gamma: 0.95-0.99 range works best. 1.0 can be unstable.
+#
+# Signs of good training:
+# - TD error decreases steadily
+# - Loss doesn't spike or oscillate wildly
+# - Test loss tracks training loss reasonably
+#
+# If unstable:
+# - Reduce lr to 1e-5
+# - Increase batch_size to 128
+# - Reduce gamma to 0.95
+# - Set unfreeze_last_n_layers to 0
+# - Try pooling_strategy: mean (more robust than last_token)
+#
+# ============================================================================
+
+# --- AGGRESSIVE TD(0) (if basic config works well) ---
+# epochs: 20
+# batch_size: 128
+# lr: 5.0e-5
+# gamma: 0.99
+# unfreeze_last_n_layers: 3
+# head_layers: 5
+
+# --- ULTRA-STABLE TD(0) (if you're seeing divergence) ---
+# epochs: 20
+# batch_size: 128
+# lr: 1.0e-5
+# gamma: 0.95
+# unfreeze_last_n_layers: 0
+# pooling_strategy: mean
+# head_layers: 3
+# head_dropout: 0.2
