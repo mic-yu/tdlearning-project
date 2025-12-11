@@ -10,8 +10,13 @@ freeze-base: true
 # Core hyperparameters
 gamma: .99         # No discounting
 epochs: 5          # More epochs needed - TD(0) has higher variance per update
-batch-size: 64     # Larger batches help stabilize bootstrap targets
+batch-size: 32     # Larger batches help stabilize bootstrap targets
 lr: 1e-4           # Lower LR - bootstrap introduces non-stationarity
+
+gradient-accumulation-steps: 8   # Effective batch size = 8 * 8 = 64
+max-length: 1024                 # Truncate long reasoning traces
+use-bf16: true                   # Half precision for base model
+num-workers: 4 
 
 # Infrastructure
 device: "cuda"

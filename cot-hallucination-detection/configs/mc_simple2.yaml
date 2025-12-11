@@ -1,0 +1,31 @@
+# Monte Carlo Policy Evaluation Config
+# Dataset: ~70k reasoning traces, ~20k incorrect (≈29% error rate)
+
+algo: mc
+
+# Model
+model-name: "Qwen/Qwen2.5-3B-Instruct"
+freeze-base: true
+
+# Model architecture (key changes for better performance)
+pooling: "last"              # Last token is most informative for causal LMs
+head-hidden-dim: 512         # More capacity in value head
+head-num-layers: 3           # Deeper MLP
+head-dropout: 0.1            # Regularization
+
+# Core hyperparameters
+gamma: .99                   # No discounting
+epochs: 3                 # More epochs - we have more params now
+batch-size: 32
+lr: 1e-3                     # Higher LR for MLP head (no pretrained weights)
+
+# Memory optimization
+gradient-accumulation-steps: 8
+max-length: 1024
+use-bf16: true
+num-workers: 4
+
+# Infrastructure
+device: "cuda"
+wandb-project: "cot-mrp-value"
+save-path: "checkpoints/mc_value_model.pt"
