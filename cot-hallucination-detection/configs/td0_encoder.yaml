@@ -1,0 +1,46 @@
+# TD(0) Policy Evaluation - FAST Config
+# Task: V(s) = E[G_t | s] = P(incorrect | s)
+
+algo: td0
+
+# =============================================================================
+# MODEL
+# =============================================================================
+model-name: "BAAI/bge-large-en-v1.5"
+freeze-base: true
+
+pooling: "cls"
+head-hidden-dim: 256
+head-num-layers: 2
+head-dropout: 0.1
+normalize-embeddings: false
+
+# =============================================================================
+# TRAINING - FAST
+# =============================================================================
+gamma: .99
+epochs: 5
+batch-size: 32
+lr: 2e-3
+gradient-accumulation-steps: 2
+
+output-activation: sigmoid
+loss: bce
+
+# =============================================================================
+# SYSTEM
+# =============================================================================
+max-length: 512
+num-workers: 4
+use-bf16: true
+device: "cuda"
+
+# =============================================================================
+# CHECKPOINTING
+# =============================================================================
+checkpoint-dir: "checkpoints/td0"
+save-every: 1
+save-best: true
+save-path: "checkpoints/td0/final.pt"
+
+wandb-project: "cot-mrp-encoder"

@@ -1,0 +1,47 @@
+# TD(λ) Policy Evaluation - FAST Config
+# Task: V(s) = E[G_t | s] = P(incorrect | s)
+
+algo: tdlambda
+
+# =============================================================================
+# MODEL
+# =============================================================================
+model-name: "BAAI/bge-large-en-v1.5"
+freeze-base: true
+
+pooling: "cls"
+head-hidden-dim: 256
+head-num-layers: 2
+head-dropout: 0.1
+normalize-embeddings: false
+
+# =============================================================================
+# TRAINING - FAST
+# =============================================================================
+gamma: .99
+lmbda: 0.9
+epochs: 4
+batch-size: 32
+lr: 3e-3
+gradient-accumulation-steps: 2
+
+output-activation: sigmoid
+loss: bce
+
+# =============================================================================
+# SYSTEM
+# =============================================================================
+max-length: 512
+num-workers: 4
+use-bf16: true
+device: "cuda"
+
+# =============================================================================
+# CHECKPOINTING
+# =============================================================================
+checkpoint-dir: "checkpoints/td_lambda"
+save-every: 1
+save-best: true
+save-path: "checkpoints/td_lambda/final.pt"
+
+wandb-project: "cot-mrp-encoder"
