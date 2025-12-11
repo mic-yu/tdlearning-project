@@ -99,7 +99,7 @@ def train_td(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
         for batch, in trainDataLoader:
             X, Y = get_target_from_batch_inf(batch, targetModel, cfg, params)
             optimizer.zero_grad()
-            outputs = model(X)
+            outputs = model(X, sig=False)
             if cfg.train_forward_sig:
                 outputs = sig(outputs)
 
@@ -140,16 +140,29 @@ def train_td(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
                 targetModel.eval()
                 targetModel.to(device=params["device"])
         if (epoch + 1) % cfg.eval_frequency == 0:
-            val_loss, conf_mx, eval_avg_v = eval(model, valDataLoader, params["loss_fn"], nn_sig=False)
+            if cfg.loss_fn == "BCE":
+                nn_sig = True
+            elif cfg.loss_fn == "MSE":
+                nn_sig = False
+            else:
+                nn_sig = None
+            val_loss, conf_mx, eval_avg_v = eval(model, valDataLoader, params["loss_fn"], nn_sig=nn_sig)
             if trial is not None:
                 trial.report(-val_loss, epoch)
             BA = get_ba_from_conf(*conf_mx.ravel())
             elapsed_time = (time.time() - start_time) / 60
             if val_loss <= best_val_loss:
-                torch.save(model.state_dict(), best_model_path)
+                if cfg.objective_value == "best_val_loss":
+                    torch.save(model.state_dict(), best_model_path)
+                    wb_run.summary["Best Epoch"] = epoch
                 wb_run.summary["Best eval loss"] = val_loss
-                wb_run.summary["Best Epoch"] = epoch
                 best_val_loss = val_loss
+            if BA >= best_val_ba:
+                if cfg.objective_value == "best_val_ba":
+                    torch.save(model.state_dict(), best_model_path)
+                    wb_run.summary["Best Epoch"] = epoch
+                best_val_ba = BA
+                wb_run.summary["Best eval BA"] = best_val_ba
             wandb_report = {"epoch": epoch,
                 "optimization step": step,
                 "train/loss": running_avg,
@@ -157,7 +170,8 @@ def train_td(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
                 "validation/Balanced Accuracy": BA,
                 "validation/avg_v": eval_avg_v,
                 "Elapsed Time Minutes": elapsed_time,
-                "best_val_loss": best_val_loss
+                "best_val_loss": best_val_loss,
+                "best_val_ba": best_val_ba
                 }
             wb_run.log(wandb_report)
                 
@@ -242,3 +256,5 @@ def grad_norm(model):
             total += p.grad.detach().norm().item()
             count += 1
     return total / count if count > 0 else 0.0
+
+

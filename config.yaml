@@ -1,29 +1,29 @@
 mode: "wandb_sweep" #or "single_run" #or "sweep"
-domain: "committor" #or robocup
-path: ./data/EM_td_ep_100.pkl #/data/n_eps-500-env-base_agent_env_2025-11-26_16-18-29.pkl #./data/EM_td_ep_100.pkl 
+domain: "robocup" #committor" #or robocup
+path: ./data/n_eps-500-env-base_agent_env_2025-11-26_16-18-29.pkl #./data/EM_td_ep_100.pkl #/ #./data/EM_td_ep_100.pkl 
 #"./data/n_eps-100-env-base_agent_env_2025-11-06_21-07-54.pkl" #training data path
 model_storage_dir: "models"
-chtc: False
+chtc: True
 max_k: 100
 train_val_test_split: [0.6, 0.2, 0.2]
-num_epochs: 200
+num_epochs: 300
 train_forward_sig: False #Manually pass outputs of model during training through a sigmoid layer inside script. 
                         #It is always turned off for the model.
 eval_frequency: 5 #Evaluation will happen every eval_frequency epochs during training
 train_loss_frequency: 1000 #Report running avg loss after this inteverval of steps
-loss_fn: "MSE"
+loss_fn: "BCE"
 optimizer: "Adam"
-#final_value: "best_val_ba"
+objective_value: "best_val_ba" #or "best_val_loss"
 
 wandb:
   entity: "dpinchuk-university-of-wisconsin-madison"
-  project: "td_committor_ep100" #"td_abs_inf_500ep_MSE" #"td_committor_ep100" #"td_abs_inf_500ep" #"td_test"
+  project: "td_abs_inf_500ep" #"td_committor_ep100" #"td_abs_inf_500ep_MSE" #"td_committor_ep100" # #"td_test"
 
 wandb_sweep:
-  name: "ep_100_l5_MSE" #"ep_100_abs_l5_BCE"
+  name: "ep_500_l5_BCE" #"ep_100_abs_l5_BCE"
   n_layers: 5
-  sweep_id: "h210preq" #"51nmbbex" #"b45t4g0f" #ux0zd8ly #"fq8srmh7"
-  count: 100
+  sweep_id: "jmt004q6" #"h210preq" #"51nmbbex" #"b45t4g0f" #ux0zd8ly #"fq8srmh7"
+  count: 1
 
 optuna_settings:
   study_name: "tdgoal_h100_ep100_epoch200"
