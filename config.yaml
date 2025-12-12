@@ -3,7 +3,7 @@ domain: "robocup" #committor" #or robocup
 path: ./data/n_eps-500-env-base_agent_env_2025-11-26_16-18-29.pkl #./data/EM_td_ep_100.pkl #/ #./data/EM_td_ep_100.pkl 
 #"./data/n_eps-100-env-base_agent_env_2025-11-06_21-07-54.pkl" #training data path
 model_storage_dir: "models"
-chtc: True
+chtc: False
 max_k: 100
 train_val_test_split: [0.6, 0.2, 0.2]
 num_epochs: 300
@@ -14,15 +14,16 @@ train_loss_frequency: 1000 #Report running avg loss after this inteverval of ste
 loss_fn: "BCE"
 optimizer: "Adam"
 objective_value: "best_val_ba" #or "best_val_loss"
+EMA: True
 
 wandb:
   entity: "dpinchuk-university-of-wisconsin-madison"
   project: "td_abs_inf_500ep" #"td_committor_ep100" #"td_abs_inf_500ep_MSE" #"td_committor_ep100" # #"td_test"
 
 wandb_sweep:
-  name: "ep_500_l5_BCE" #"ep_100_abs_l5_BCE"
+  name: "ep_500_l5_BCE_EMA" #"ep_100_abs_l5_BCE"
   n_layers: 5
-  sweep_id: "jmt004q6" #"h210preq" #"51nmbbex" #"b45t4g0f" #ux0zd8ly #"fq8srmh7"
+  sweep_id: "c86d33sk" #"jmt004q6" #"h210preq" #"51nmbbex" #"b45t4g0f" #ux0zd8ly #"fq8srmh7"
   count: 1
 
 optuna_settings:
@@ -39,8 +40,9 @@ search_space:
   bs_range: [32, 512] #batch size range
   bs_step: 32
   lr_range: [1e-5, 1e-2]
-  target_update_frequency_range: [10, 1000] #steps. 
-  tuf_step: 10
+  #target_update_frequency_range: [10, 1000] #steps. 
+  #tuf_step: 10
+  alpha_ema_range: [0.9, 0.999]
 
 single_run:
   n_layers: 2 #hidden layers

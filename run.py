@@ -67,7 +67,7 @@ def wandb_sweep_objective_committor(hydra_cfg):
         hidden_sizes.append(param_config[f"neurons_layer_{i}"])
     lr = param_config["lr"]
     batch_size = param_config["bs"]  
-    target_update_frequency = param_config["target_update_frequency"]
+
 
 
     if hydra_cfg.loss_fn == "MSE":
@@ -85,9 +85,15 @@ def wandb_sweep_objective_committor(hydra_cfg):
               "bs": batch_size,
               "loss_fn": loss_fn,
               "model_storage_path": model_storage_path,
-              "best_model_storage_path": best_model_storage_path,
-              "target_update_frequency": target_update_frequency
+              "best_model_storage_path": best_model_storage_path
               }
+    
+    if hydra_cfg.EMA:
+        alpha_ema = param_config["alpha_ema"]
+        params["alpha_ema"] = alpha_ema
+    else:
+        target_update_frequency = param_config["target_update_frequency"]
+        params["target_update_frequency"] = target_update_frequency
 
     #Data
     trainList, _, _ = get_abs_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split, ep_np=False, preprocess=False)
@@ -165,7 +171,7 @@ def wandb_sweep_objective(hydra_cfg):
         hidden_sizes.append(param_config[f"neurons_layer_{i}"])
     lr = param_config["lr"]
     batch_size = param_config["bs"]  
-    target_update_frequency = param_config["target_update_frequency"]
+
 
 
     if hydra_cfg.loss_fn == "MSE":
@@ -183,9 +189,14 @@ def wandb_sweep_objective(hydra_cfg):
               "bs": batch_size,
               "loss_fn": loss_fn,
               "model_storage_path": model_storage_path,
-              "best_model_storage_path": best_model_storage_path,
-              "target_update_frequency": target_update_frequency
+              "best_model_storage_path": best_model_storage_path
               }
+    if hydra_cfg.EMA:
+        alpha_ema = param_config["alpha_ema"]
+        params["alpha_ema"] = alpha_ema
+    else:
+        target_update_frequency = param_config["target_update_frequency"]
+        params["target_update_frequency"] = target_update_frequency
 
     #Data
     trainList, _, _ = get_abs_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split, ep_np=False, preprocess=True)

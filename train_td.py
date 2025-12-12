@@ -110,6 +110,8 @@ def train_td(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
             batch_avg_gradient = grad_norm(model)
             optimizer.step()
             with torch.no_grad():
+                if cfg.loss_fn == "BCE" and cfg.train_forward_sig == False:
+                    outputs = sig(outputs)
                 batch_avg_v = outputs.mean().item()
                
                 
@@ -135,7 +137,11 @@ def train_td(trial, wb_run, model, trainDataList, valDataLoader, cfg, params):
                 train_avg_v = 0.0
                 gradient_avg = 0.0
                 running_count = 0
-            if step % params["target_update_frequency"] == 0:
+            if cfg.EMA:
+                alpha_ema = params["alpha_ema"]
+                update_target_network(targetModel, model, alpha_ema)
+                targetModel.eval()
+            elif step % params["target_update_frequency"] == 0:
                 targetModel = copy.deepcopy(model)
                 targetModel.eval()
                 targetModel.to(device=params["device"])
@@ -256,5 +262,11 @@ def grad_norm(model):
             total += p.grad.detach().norm().item()
             count += 1
     return total / count if count > 0 else 0.0
+
+@torch.no_grad()
+def update_target_network(targetModel, currentModel, alpha):
+    for p_target, p_online in zip(targetModel.parameters(), currentModel.parameters()):
+        p_target.data.mul_(alpha).add_(p_online.data, alpha=(1 - alpha))
+
 
 
