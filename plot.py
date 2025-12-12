@@ -324,7 +324,7 @@ if __name__ == "__main__":
     # db_dir = f"./transfer/transfer_databases_4346754_{job}_{horizon}/databases/"
     # db_path = f"sqlite:///" + db_dir + "optuna_goalNet.db"
     
-    
+    '''
     study_name = "horizon_{}_goalNet_BABCE_BA".format(horizon)
     iso_reg_save_path = f"./../roboClassifier/iso_reg_{cluster}_{horizon}.pkl"
     input_size = 6
@@ -349,6 +349,7 @@ if __name__ == "__main__":
 
     delta = [100, 0]
     plot_agent_near_ball_abs_inf(model, None, delta, agent_z=0, scale=10)
+    '''
     
     
 
@@ -368,18 +369,19 @@ if __name__ == "__main__":
     #     delta = [dx, 0]
     #     plot_agent_near_ball(model, iso_reg, delta, agent_z=0, scale=10)
 
-    '''
+    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # model_path = "./artifact_download/tdgoal_h100_ep500_epoch200_l5_trial_2025-08-27_16-10-28_pv5kiybp_best.pth"
     # run_path = "dpinchuk-university-of-wisconsin-madison/tdgoal_h100_ep500_epoch200/pv5kiybp"
-    model_path = "./artifact_download/ep_500_abs_l5_BCE_trial_2025-12-01_03-58-56_ssc8vz8m_best.pth"
-    run_path = "dpinchuk-university-of-wisconsin-madison/td_abs_inf_500ep/ssc8vz8m"
+    #model_path = "./artifact_download/ep_500_abs_l5_BCE_trial_2025-12-01_03-58-56_ssc8vz8m_best.pth"
+    model_path = "./artifact_download/ep_500_l5_BCE_trial_2025-12-11_22-15-31_yy01it4b_best.pth"
+    run_path = "dpinchuk-university-of-wisconsin-madison/td_abs_inf_500ep/yy01it4b"
     assert os.path.exists(model_path)
     model = load_wandb_model(run_path, model_path, device)
     # iso_reg = load_iso_reg("./temp_best_td_model_iso_reg.pth")
     delta = [100, 0]
     plot_agent_near_ball_abs_inf(model, None, delta, agent_z=0, scale=10)
-    '''
+    
 
     # for x in [-4000, -2000, -1000, 0, 1000, 2000, 4000]:
     #     abs_agent_loc = [x, 0, 180]

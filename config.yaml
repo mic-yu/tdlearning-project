@@ -1,6 +1,7 @@
+algorithm: "mc" # or td"
 mode: "wandb_sweep" #or "single_run" #or "sweep"
-domain: "committor" #or robocup
-path: ./data/EM_td_ep_400.pkl #./data/n_eps-500-env-base_agent_env_2025-11-26_16-18-29.pkl #./data/EM_td_ep_400.pkl #/ #./data/EM_td_ep_100.pkl 
+domain: "robocup" #"committor" #or robocup
+path: ./data/n_eps-500-env-base_agent_env_2025-11-26_16-18-29.pkl #./data/n_eps-500-env-base_agent_env_2025-11-26_16-18-29.pkl #./data/EM_td_ep_400.pkl #/ #./data/EM_td_ep_100.pkl 
 #"./data/n_eps-100-env-base_agent_env_2025-11-06_21-07-54.pkl" #training data path
 model_storage_dir: "models"
 chtc: True
@@ -18,12 +19,12 @@ EMA: False
 
 wandb:
   entity: "dpinchuk-university-of-wisconsin-madison"
-  project: "td_committor_ep400" #"td_abs_inf_500ep" #"td_committor_ep100" #"td_abs_inf_500ep_MSE" #"td_committor_ep100" # #"td_test"
+  project: "MC_abs_inf_500ep" #"td_abs_inf_500ep" #"td_committor_ep100" #"td_abs_inf_500ep_MSE" #"td_committor_ep100" # #"td_test"
 
 wandb_sweep:
-  name: "ep_400_l5_BCE" #"ep_500_l5_BCE" #"ep_500_l5_BCE_EMA" #"ep_100_abs_l5_BCE"
+  name: "ep_500_l5_BCE" #"ep_400_l5_BCE" #"ep_500_l5_BCE" #"ep_500_l5_BCE_EMA" #"ep_100_abs_l5_BCE"
   n_layers: 5
-  sweep_id: "lyaeis7r" #"c86d33sk" #(ep_500_l5_BCE_EMA) #"jmt004q6" (ep_500_l5_BCE) #"h210preq" #"51nmbbex" #"b45t4g0f" #ux0zd8ly #"fq8srmh7"
+  sweep_id: "967j9uqm" #"lyaeis7r" (ep_400_l5_BCE) #"c86d33sk" #(ep_500_l5_BCE_EMA) #"jmt004q6" (ep_500_l5_BCE) #"h210preq" #"51nmbbex" #"b45t4g0f" #ux0zd8ly #"fq8srmh7"
   count: 1
 
 optuna_settings:
