@@ -2,6 +2,7 @@ import sys
 import math
 import torch
 import pickle
+import random
 import numpy as np
 import optuna
 from torch.utils.data import TensorDataset
@@ -63,7 +64,7 @@ def get_td_train_data_inf(data_list):
     dataTensor = torch.cat(new_ep_list, dim=0)
     return dataTensor
 
-def get_abs_episode_data(path, train_val_test_split, ep_np=True, preprocess=False):
+def get_abs_episode_data(path, train_val_test_split, ep_np=True, preprocess=False, shuffle=False):
     """
     Expects input data to be a list of episodes(List[List[np.array]]) or (List[np.array] if ep_np=True)
     Each episode is of shape N x (features, label).
@@ -96,6 +97,9 @@ def get_abs_episode_data(path, train_val_test_split, ep_np=True, preprocess=Fals
     num_test = math.ceil(train_val_test_split[2] * num_eps)
     num_train = num_eps - num_test - num_val
 
+    if shuffle:
+        random.shuffle(obsList)
+
     train_list = obsList[:num_train]
     val_list = obsList[num_train: num_train + num_val]
     test_list = obsList[num_train + num_val:]
@@ -123,7 +127,7 @@ def get_episode_data(path, train_val_test_split):
 
     return train_list, val_list, test_list
 
-def load_data_tensors(path, train_val_test_split, horizon=None, ep_np = True):
+def load_data_tensors(path, train_val_test_split, horizon=None, ep_np = True, shuffle=False):
     """
     Labels data according to the horizon and returns the train, val and test datasets.
 
@@ -160,6 +164,8 @@ def load_data_tensors(path, train_val_test_split, horizon=None, ep_np = True):
     num_test = math.ceil(train_val_test_split[2] * num_eps)
     num_train = num_eps - num_test - num_val
 
+    if shuffle:
+        random.shuffle(obsList)
 
     train_list = obsList[:num_train]
     val_list = obsList[num_train: num_train + num_val]
@@ -205,7 +211,7 @@ def load_datasets(path, train_val_test_split, horizon, device='cpu'):
 
     return trainDataset, valDataset, testDataset
 
-def load_abs_datasets(path, train_val_test_split, horizon, device='cpu', ep_np = False, preprocess = True):
+def load_abs_datasets(path, train_val_test_split, horizon, device='cpu', ep_np = False, preprocess = True, shuffle=False):
     """
     Expects input data to be a list of episodes(List[np.array]). 
     Each episode is of shape N x (features, label).
@@ -219,7 +225,7 @@ def load_abs_datasets(path, train_val_test_split, horizon, device='cpu', ep_np =
         -torch.Dataset (val)
         -torch.Dataset (test)
     """
-    tensorList = load_data_tensors(path, train_val_test_split, horizon, ep_np=ep_np)
+    tensorList = load_data_tensors(path, train_val_test_split, horizon, ep_np=ep_np, shuffle=shuffle)
     tensorList = [t.to(device=device) for t in tensorList]
     if preprocess:
         tensorList = [preprocess_abs_dataset(t) for t in tensorList]

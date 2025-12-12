@@ -96,10 +96,10 @@ def wandb_sweep_objective_committor(hydra_cfg):
         params["target_update_frequency"] = target_update_frequency
 
     #Data
-    trainList, _, _ = get_abs_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split, ep_np=False, preprocess=False)
+    trainList, _, _ = get_abs_episode_data(hydra_cfg.path, hydra_cfg.train_val_test_split, ep_np=True, preprocess=False, shuffle=True)
     #valData = get_val_data(valList, hydra_cfg).to(device=device)
     #valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
-    _, valDataset, _ = load_abs_datasets(hydra_cfg.path, hydra_cfg.train_val_test_split, -1, device=device, preprocess=False, )
+    _, valDataset, _ = load_abs_datasets(hydra_cfg.path, hydra_cfg.train_val_test_split, -1, device=device, ep_np=True, preprocess=False, shuffle=True)
     generator = torch.Generator().manual_seed(37)
     valDataLoader = DataLoader(valDataset, batch_size=valDataset.__len__(), shuffle=True, generator=generator)
 

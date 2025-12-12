@@ -30,7 +30,7 @@ print("inference complete")
 # plt.scatter(pts[:, 0], pts[:, 1], c=output.numpy(force=True), cmap='viridis')
 # plt.colorbar(label="probability")
 
-path_gt = "./data/mueller_q_beta_0p1.csv"
+path_gt = "./data/mueller_q_beta_0p025.csv"
 df = pd.read_csv(path_gt, header=None)     # each row: x,y
 print(df)
 qlist = df.iloc[0].values
@@ -43,3 +43,9 @@ q = torch.from_numpy(qlist)
 
 mse_loss = torch.nn.MSELoss()
 print(mse_loss(output.squeeze(), q[1:].squeeze()))
+
+out_list = []
+for i in range(len(output)):
+    out_list.append(output.squeeze().detach()[i].item())
+#output = [x for x in output.squeeze().numpy(force=True)]
+plt.plot(pts[:, 0], pts[:, 1], c=out_list, cmap='viridis')

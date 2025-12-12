@@ -13,5 +13,6 @@ artifact_download_test/
 
 databasestest.db
 playground.py
+playground_2.py
 
 *.pth
