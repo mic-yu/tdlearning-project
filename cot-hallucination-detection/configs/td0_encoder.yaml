@@ -52,4 +52,4 @@ save-best: true
 save-path: "checkpoints/td0/final.pt"
 
 wandb-project: "hullucination-prediction"
-wandb-run-name: "td0-experiment-1"
+wandb-run-name: "td0-experiment-with-weighted-loss"

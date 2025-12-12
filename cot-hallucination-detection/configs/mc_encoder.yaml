@@ -50,4 +50,4 @@ save-best: true
 save-path: "checkpoints/mc/final.pt"
 
 wandb-project: "hullucination-prediction"
-wandb-run-name: "mc-experiment-1"
+wandb-run-name: "mc-experiment-with-weighted-loss"

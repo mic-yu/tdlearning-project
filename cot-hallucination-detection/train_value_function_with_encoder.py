@@ -430,7 +430,7 @@ def compute_value_loss(logits: torch.Tensor, targets: torch.Tensor, args) -> tor
     Args:
         logits: Raw model outputs (B,)
         targets: Target values in [0, 1] (B,)
-        args: Must have args.loss and args.output_activation
+        args: Must have args.loss, args.output_activation, and optionally args.pos_weight
     
     Returns:
         Scalar loss tensor
@@ -441,10 +441,17 @@ def compute_value_loss(logits: torch.Tensor, targets: torch.Tensor, args) -> tor
         values = logits
     
     if args.loss == "mse":
+        if hasattr(args, 'pos_weight') and args.pos_weight != 1.0:
+            # Weighted MSE: higher weight on positive (incorrect) samples
+            weights = torch.where(targets > 0.5, args.pos_weight, 1.0)
+            return (weights * (values - targets) ** 2).mean()
         return F.mse_loss(values, targets)
     elif args.loss == "bce":
         if args.output_activation == "sigmoid":
             # Use BCE with logits for numerical stability
+            if hasattr(args, 'pos_weight') and args.pos_weight != 1.0:
+                pos_weight = torch.tensor([args.pos_weight], device=logits.device)
+                return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
             return F.binary_cross_entropy_with_logits(logits, targets)
         else:
             # Clamp values to valid range for BCE
@@ -1245,6 +1252,8 @@ def parse_args():
     parser.add_argument("--gradient-accumulation-steps", type=int, default=4)
     parser.add_argument("--loss", choices=["mse", "bce"], default="mse",
                         help="Loss function: mse (standard RL) or bce (better gradients for sigmoid)")
+    parser.add_argument("--pos-weight", type=float, default=1.0,
+                        help="Weight for positive class (incorrect). Use ~2.5 for 29%% positive rate to balance classes.")
     parser.add_argument("--output-activation", choices=["sigmoid", "none"], default="sigmoid",
                         help="Output activation: sigmoid bounds to [0,1], none for raw logits")
     
