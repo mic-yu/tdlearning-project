@@ -15,6 +15,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -654,6 +655,18 @@ def train_td0(model: ValueModel, transitions: List[tuple], args, device, eval_ep
                 
                 if args.wandb_project and wandb is not None:
                     wandb.log({"td0/loss": loss.item() * accum_steps, "td0/step": global_step})
+                
+                # Detailed evaluation every N steps
+                if (args.eval_every_n_steps > 0 and 
+                    global_step % args.eval_every_n_steps == 0 and 
+                    eval_episodes):
+                    detailed_evaluate(
+                        model, eval_episodes, args, device,
+                        split_name="val",
+                        global_step=global_step,
+                        threshold=args.eval_threshold,
+                    )
+                    model.train()
             
             epoch_loss += loss.item() * accum_steps
             num_batches += 1
@@ -666,10 +679,17 @@ def train_td0(model: ValueModel, transitions: List[tuple], args, device, eval_ep
         avg_loss = epoch_loss / max(num_batches, 1)
         print(f"[TD0] Epoch {epoch}: loss = {avg_loss:.4f}")
         
-        # Evaluate and checkpoint
+        # End of epoch evaluation and checkpoint
         eval_loss = None
         if eval_episodes:
-            eval_loss = evaluate(model, eval_episodes, args, device, f"epoch{epoch}")
+            metrics = detailed_evaluate(
+                model, eval_episodes, args, device,
+                split_name="val_epoch",
+                global_step=global_step,
+                threshold=args.eval_threshold,
+            )
+            eval_loss = metrics.get("mse")
+            model.train()
         
         ckpt.on_epoch_end(epoch, avg_loss, eval_loss)
 
@@ -720,6 +740,18 @@ def train_mc(model: ValueModel, pairs: List[tuple], args, device, eval_episodes:
                 
                 if args.wandb_project and wandb is not None:
                     wandb.log({"mc/loss": loss.item() * accum_steps, "mc/step": global_step})
+                
+                # Detailed evaluation every N steps
+                if (args.eval_every_n_steps > 0 and 
+                    global_step % args.eval_every_n_steps == 0 and 
+                    eval_episodes):
+                    detailed_evaluate(
+                        model, eval_episodes, args, device,
+                        split_name="val",
+                        global_step=global_step,
+                        threshold=args.eval_threshold,
+                    )
+                    model.train()
             
             epoch_loss += loss.item() * accum_steps
             num_batches += 1
@@ -731,10 +763,17 @@ def train_mc(model: ValueModel, pairs: List[tuple], args, device, eval_episodes:
         avg_loss = epoch_loss / max(num_batches, 1)
         print(f"[MC] Epoch {epoch}: loss = {avg_loss:.4f}")
         
-        # Evaluate and checkpoint
+        # End of epoch evaluation and checkpoint
         eval_loss = None
         if eval_episodes:
-            eval_loss = evaluate(model, eval_episodes, args, device, f"epoch{epoch}")
+            metrics = detailed_evaluate(
+                model, eval_episodes, args, device,
+                split_name="val_epoch",
+                global_step=global_step,
+                threshold=args.eval_threshold,
+            )
+            eval_loss = metrics.get("mse")
+            model.train()
         
         ckpt.on_epoch_end(epoch, avg_loss, eval_loss)
 
@@ -853,6 +892,18 @@ def train_td_lambda(model: ValueModel, episodes: Sequence[dict], args, device, e
                 
                 if args.wandb_project and wandb is not None:
                     wandb.log({"td_lambda/loss": loss.item() * accum_steps, "td_lambda/step": global_step})
+                
+                # Detailed evaluation every N steps
+                if (args.eval_every_n_steps > 0 and 
+                    global_step % args.eval_every_n_steps == 0 and 
+                    eval_episodes):
+                    detailed_evaluate(
+                        model, eval_episodes, args, device,
+                        split_name="val",
+                        global_step=global_step,
+                        threshold=args.eval_threshold,
+                    )
+                    model.train()
             
             epoch_loss += loss.item() * accum_steps
             num_batches += 1
@@ -864,10 +915,17 @@ def train_td_lambda(model: ValueModel, episodes: Sequence[dict], args, device, e
         avg_loss = epoch_loss / max(num_batches, 1)
         print(f"[TD(λ)] Epoch {epoch}: loss = {avg_loss:.4f}")
         
-        # Evaluate and checkpoint
+        # End of epoch evaluation and checkpoint
         eval_loss = None
         if eval_episodes:
-            eval_loss = evaluate(model, eval_episodes, args, device, f"epoch{epoch}")
+            metrics = detailed_evaluate(
+                model, eval_episodes, args, device,
+                split_name="val_epoch",
+                global_step=global_step,
+                threshold=args.eval_threshold,
+            )
+            eval_loss = metrics.get("mse")
+            model.train()
         
         ckpt.on_epoch_end(epoch, avg_loss, eval_loss)
 
@@ -906,6 +964,228 @@ def evaluate(model: ValueModel, episodes: List[dict], args, device, split_name: 
         wandb.log({f"eval/{split_name}_mse": avg_loss})
     
     return avg_loss
+
+
+def detailed_evaluate(
+    model: ValueModel, 
+    episodes: List[dict], 
+    args, 
+    device, 
+    split_name: str = "val",
+    global_step: int = None,
+    threshold: float = 0.5,
+) -> Dict[str, float]:
+    """
+    Comprehensive evaluation of the value function as a predictor of incorrect answers.
+    
+    Metrics computed:
+    - MSE loss (standard)
+    - AUC-ROC: How well V(s) ranks incorrect vs correct episodes
+    - Accuracy, Precision, Recall, F1 at given threshold
+    - Per-step accuracy: At each reasoning step, how accurate is the prediction
+    - Early detection: How early can we correctly predict incorrect answers
+    
+    Args:
+        model: Trained value model
+        episodes: List of episode dicts with 'states' and 'reward'
+        args: Training args
+        device: torch device
+        split_name: Name for logging
+        global_step: Current training step (for wandb logging)
+        threshold: Classification threshold (default 0.5)
+    
+    Returns:
+        Dict of metrics
+    """
+    from collections import defaultdict
+    
+    model.eval()
+    
+    # Collect predictions per episode and per step
+    episode_predictions = []  # (final_prediction, true_label) for each episode
+    step_predictions = defaultdict(list)  # step_idx -> list of (pred, label)
+    all_predictions = []  # (pred, label) for all states
+    
+    # For early detection analysis
+    first_correct_step = []  # For incorrect episodes: first step where pred > threshold
+    
+    with torch.no_grad():
+        for ep in episodes:
+            states = ep["states"]
+            label = ep["reward"]  # 1 if incorrect, 0 if correct
+            T = len(states)
+            
+            if T == 0:
+                continue
+            
+            # Get predictions for all states in this episode
+            input_ids, attn = model.encode(states, device)
+            logits = model(input_ids, attn)
+            preds = get_values(logits, args).cpu().numpy()
+            
+            # Store per-step predictions
+            for t, pred in enumerate(preds):
+                step_predictions[t].append((pred, label))
+                all_predictions.append((pred, label))
+            
+            # Episode-level: use final state prediction
+            final_pred = preds[-1]
+            episode_predictions.append((final_pred, label))
+            
+            # Early detection: for incorrect episodes, find first step where pred > threshold
+            if label == 1:  # Incorrect episode
+                first_step = None
+                for t, pred in enumerate(preds):
+                    if pred > threshold:
+                        first_step = t
+                        break
+                first_correct_step.append((first_step, T))
+    
+    # Compute metrics
+    metrics = {}
+    
+    # 1. Overall MSE
+    preds_arr = np.array([p for p, _ in all_predictions])
+    labels_arr = np.array([l for _, l in all_predictions])
+    metrics["mse"] = float(np.mean((preds_arr - labels_arr) ** 2))
+    
+    # 2. Episode-level classification metrics (using final state)
+    ep_preds = np.array([p for p, _ in episode_predictions])
+    ep_labels = np.array([l for _, l in episode_predictions])
+    
+    # AUC-ROC
+    try:
+        from sklearn.metrics import roc_auc_score, precision_recall_fscore_support, accuracy_score
+        if len(np.unique(ep_labels)) > 1:
+            metrics["auc_roc"] = float(roc_auc_score(ep_labels, ep_preds))
+        else:
+            metrics["auc_roc"] = 0.5
+    except ImportError:
+        # Manual AUC approximation if sklearn not available
+        metrics["auc_roc"] = _simple_auc(ep_labels, ep_preds)
+    
+    # Binary classification at threshold
+    ep_preds_binary = (ep_preds > threshold).astype(int)
+    metrics["accuracy"] = float(np.mean(ep_preds_binary == ep_labels))
+    
+    # Precision, Recall, F1 for detecting incorrect answers (label=1)
+    tp = np.sum((ep_preds_binary == 1) & (ep_labels == 1))
+    fp = np.sum((ep_preds_binary == 1) & (ep_labels == 0))
+    fn = np.sum((ep_preds_binary == 0) & (ep_labels == 1))
+    
+    metrics["precision"] = float(tp / max(tp + fp, 1))
+    metrics["recall"] = float(tp / max(tp + fn, 1))
+    metrics["f1"] = float(2 * tp / max(2 * tp + fp + fn, 1))
+    
+    # 3. Per-step metrics
+    max_steps = max(step_predictions.keys()) + 1 if step_predictions else 0
+    step_accuracies = []
+    step_aucs = []
+    step_precisions = []
+    step_recalls = []
+    
+    for t in range(min(max_steps, 20)):  # Cap at 20 steps for logging
+        if t in step_predictions and len(step_predictions[t]) > 10:
+            step_preds = np.array([p for p, _ in step_predictions[t]])
+            step_labels = np.array([l for _, l in step_predictions[t]])
+            
+            step_binary = (step_preds > threshold).astype(int)
+            step_acc = float(np.mean(step_binary == step_labels))
+            step_accuracies.append(step_acc)
+            
+            # Precision and Recall for this step
+            step_tp = np.sum((step_binary == 1) & (step_labels == 1))
+            step_fp = np.sum((step_binary == 1) & (step_labels == 0))
+            step_fn = np.sum((step_binary == 0) & (step_labels == 1))
+            
+            step_prec = float(step_tp / max(step_tp + step_fp, 1))
+            step_rec = float(step_tp / max(step_tp + step_fn, 1))
+            step_precisions.append(step_prec)
+            step_recalls.append(step_rec)
+            
+            if len(np.unique(step_labels)) > 1:
+                try:
+                    step_auc = float(roc_auc_score(step_labels, step_preds))
+                except:
+                    step_auc = _simple_auc(step_labels, step_preds)
+            else:
+                step_auc = 0.5
+            step_aucs.append(step_auc)
+            
+            metrics[f"step_{t}_acc"] = step_acc
+            metrics[f"step_{t}_auc"] = step_auc
+            metrics[f"step_{t}_precision"] = step_prec
+            metrics[f"step_{t}_recall"] = step_rec
+    
+    # Average step metrics
+    if step_accuracies:
+        metrics["avg_step_accuracy"] = float(np.mean(step_accuracies))
+        metrics["avg_step_auc"] = float(np.mean(step_aucs))
+        metrics["avg_step_precision"] = float(np.mean(step_precisions))
+        metrics["avg_step_recall"] = float(np.mean(step_recalls))
+    
+    # 4. Early detection analysis (for incorrect episodes)
+    if first_correct_step:
+        detected = [s for s, T in first_correct_step if s is not None]
+        total_incorrect = len(first_correct_step)
+        
+        metrics["early_detection_rate"] = float(len(detected) / max(total_incorrect, 1))
+        
+        if detected:
+            # Normalized detection step (0 = first step, 1 = last step)
+            normalized_steps = [s / max(T - 1, 1) for s, T in first_correct_step if s is not None]
+            metrics["avg_detection_step_normalized"] = float(np.mean(normalized_steps))
+            metrics["avg_detection_step_absolute"] = float(np.mean(detected))
+            
+            # Detection by quartile of episode
+            q1 = sum(1 for s, T in first_correct_step if s is not None and s < T * 0.25)
+            q2 = sum(1 for s, T in first_correct_step if s is not None and T * 0.25 <= s < T * 0.5)
+            q3 = sum(1 for s, T in first_correct_step if s is not None and T * 0.5 <= s < T * 0.75)
+            q4 = sum(1 for s, T in first_correct_step if s is not None and s >= T * 0.75)
+            
+            metrics["detection_q1"] = float(q1 / max(total_incorrect, 1))  # First 25% of steps
+            metrics["detection_q2"] = float(q2 / max(total_incorrect, 1))  # 25-50%
+            metrics["detection_q3"] = float(q3 / max(total_incorrect, 1))  # 50-75%
+            metrics["detection_q4"] = float(q4 / max(total_incorrect, 1))  # Last 25%
+    
+    model.train()
+    
+    # Print summary
+    print(f"\n[Eval:{split_name}] Step {global_step or 'N/A'}")
+    print(f"  MSE: {metrics['mse']:.4f}")
+    print(f"  AUC-ROC: {metrics.get('auc_roc', 0):.4f}")
+    print(f"  Accuracy: {metrics.get('accuracy', 0):.4f}")
+    print(f"  Precision: {metrics.get('precision', 0):.4f}, Recall: {metrics.get('recall', 0):.4f}, F1: {metrics.get('f1', 0):.4f}")
+    if "early_detection_rate" in metrics:
+        print(f"  Early Detection Rate: {metrics['early_detection_rate']:.4f}")
+        print(f"  Avg Detection Step (normalized): {metrics.get('avg_detection_step_normalized', 0):.4f}")
+    
+    # Log to wandb
+    if args.wandb_project and wandb is not None:
+        log_dict = {f"eval/{split_name}/{k}": v for k, v in metrics.items()}
+        if global_step is not None:
+            log_dict["global_step"] = global_step
+        wandb.log(log_dict)
+    
+    return metrics
+
+
+def _simple_auc(labels, scores):
+    """Simple AUC calculation without sklearn."""
+    labels = np.array(labels)
+    scores = np.array(scores)
+    
+    pos_scores = scores[labels == 1]
+    neg_scores = scores[labels == 0]
+    
+    if len(pos_scores) == 0 or len(neg_scores) == 0:
+        return 0.5
+    
+    auc = 0.0
+    for ps in pos_scores:
+        auc += np.sum(ps > neg_scores) + 0.5 * np.sum(ps == neg_scores)
+    
+    return auc / (len(pos_scores) * len(neg_scores))
 
 
 # -----------------------------
@@ -967,6 +1247,12 @@ def parse_args():
                         help="Loss function: mse (standard RL) or bce (better gradients for sigmoid)")
     parser.add_argument("--output-activation", choices=["sigmoid", "none"], default="sigmoid",
                         help="Output activation: sigmoid bounds to [0,1], none for raw logits")
+    
+    # Evaluation
+    parser.add_argument("--eval-every-n-steps", type=int, default=0,
+                        help="Run detailed evaluation every N steps (0 = only at epoch end)")
+    parser.add_argument("--eval-threshold", type=float, default=0.5,
+                        help="Threshold for binary classification metrics")
     
     # System
     parser.add_argument("--max-length", type=int, default=512)

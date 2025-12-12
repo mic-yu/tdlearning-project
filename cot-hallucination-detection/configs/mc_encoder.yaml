@@ -28,6 +28,12 @@ output-activation: sigmoid
 loss: bce
 
 # =============================================================================
+# EVALUATION
+# =============================================================================
+eval-every-n-steps: 100
+eval-threshold: 0.5
+
+# =============================================================================
 # SYSTEM
 # =============================================================================
 max-length: 512
@@ -43,5 +49,5 @@ save-every: 1
 save-best: true
 save-path: "checkpoints/mc/final.pt"
 
-wandb-project: "cot-mrp-encoder"
+wandb-project: "hullucination-prediction"
 wandb-run-name: "mc-experiment-1"
