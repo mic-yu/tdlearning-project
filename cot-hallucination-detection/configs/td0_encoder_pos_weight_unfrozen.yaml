@@ -1,0 +1,57 @@
+# TD(0) Policy Evaluation - FAST Config
+# Task: V(s) = E[G_t | s] = P(incorrect | s)
+
+algo: td0
+
+# =============================================================================
+# MODEL
+# =============================================================================
+model-name: "BAAI/bge-large-en-v1.5"
+freeze-base: false
+
+pooling: "cls"
+head-hidden-dim: 256
+head-num-layers: 2
+head-dropout: 0.1
+normalize-embeddings: false
+
+# =============================================================================
+# TRAINING - FAST
+# =============================================================================
+gamma: .99
+epochs: 5
+batch-size: 32
+lr: 2e-4
+gradient-accumulation-steps: 2
+
+output-activation: sigmoid
+loss: bce
+pos-weight: 2.5        # Balance classes
+
+
+# =============================================================================
+# EVALUATION
+# =============================================================================
+eval-every-n-steps: 100
+eval-threshold: 0.5
+
+
+# =============================================================================
+# SYSTEM
+# =============================================================================
+max-length: 512
+num-workers: 4
+use-bf16: true
+device: "cuda"
+
+
+# =============================================================================
+# CHECKPOINTING
+# =============================================================================
+checkpoint-dir: "checkpoints/td0_weighted_unfrozen"
+save-every: 1
+save-best: true
+save-path: "checkpoints/td0_weighted_unfrozen/final.pt"
+
+wandb-project: "hallucination-prediction"
+wandb-run-name: "td0-pos-weight-2.5-unfrozen"

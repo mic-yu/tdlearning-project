@@ -1,0 +1,36 @@
+algo: mc
+
+model-name: "BAAI/bge-large-en-v1.5"
+freeze-base: false
+
+pooling: "cls"
+head-hidden-dim: 256
+head-num-layers: 2
+head-dropout: 0.1
+normalize-embeddings: false
+
+gamma: 0.99
+epochs: 5              # More epochs
+batch-size: 32
+lr: 5e-5               # Lower LR for stability
+gradient-accumulation-steps: 2
+
+loss: bce
+pos-weight: 2.5        # Balance classes
+output-activation: sigmoid
+
+eval-every-n-steps: 100
+eval-threshold: 0.5    # Lower threshold to see true recall
+
+max-length: 512
+num-workers: 4
+use-bf16: true
+device: "cuda"
+
+checkpoint-dir: "checkpoints/mc_weighted_unfrozen"
+save-every: 1
+save-best: true
+save-path: "checkpoints/mc_weighted_unfrozen/final.pt"
+
+wandb-project: "hallucination-prediction"
+wandb-run-name: "mc-pos-weight-2.5-unfrozen"
