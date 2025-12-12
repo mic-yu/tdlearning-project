@@ -101,7 +101,7 @@ def wandb_sweep_objective_committor(hydra_cfg):
     #valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
     _, valDataset, _ = load_abs_datasets(hydra_cfg.path, hydra_cfg.train_val_test_split, -1, device=device, preprocess=False, )
     generator = torch.Generator().manual_seed(37)
-    valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True, generator=generator)
+    valDataLoader = DataLoader(valDataset, batch_size=valDataset.__len__(), shuffle=True, generator=generator)
 
     #training
     input_size = trainList[0].size(dim=1) - 1
@@ -204,7 +204,7 @@ def wandb_sweep_objective(hydra_cfg):
     #valDataset = TensorDataset(valData[:, :-1], valData[:, -1:])
     _, valDataset, _ = load_abs_datasets(hydra_cfg.path, hydra_cfg.train_val_test_split, -1, device=device, ep_np=False, preprocess=True)
     generator = torch.Generator().manual_seed(37)
-    valDataLoader = DataLoader(valDataset, batch_size=batch_size, shuffle=True, generator=generator)
+    valDataLoader = DataLoader(valDataset, batch_size=valDataset.__len__(), shuffle=True, generator=generator)
 
     #training
     input_size = trainList[0].size(dim=1) - 1
