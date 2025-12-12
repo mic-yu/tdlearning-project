@@ -364,7 +364,7 @@ class ValueModel(nn.Module):
         # Detach and convert to float32 for value head
         if self.freeze_base:
             pooled = pooled.detach()
-        pooled.float()
+        pooled = pooled.float()
         
         logits = self.value_head(pooled).squeeze(-1)  # (B,)
         return logits
