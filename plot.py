@@ -291,12 +291,66 @@ def plot_agent_near_ball_abs_inf(model, iso_reg, delta, agent_z=0, scale=10):
     output = np.reshape(output.numpy(force=True), shape=(num_y, num_x))
     print("output.size: ", output.shape)
 
+    plt.rcParams['figure.dpi'] = 600 
     plt.imshow(output, extent=[-4500, 4500, -3000, 3000], origin='lower')
     plt.colorbar()
-    plt.title(f"Horizon {horizon} \n Opponent goal is on the right.")
-    plt.xlabel(f"Each point on the heatmap is at the location of the agent, and \n" + \
-               f"the ball is {dx} to the right and {dy} above the agent. \n" + \
-                f"Agent angle is {agent_z}.")
+    #plt.title(f"Opponent goal is on the right.")
+    #plt.xlabel(f"Each point on the heatmap is at the location of the agent, and \n" + \
+    #           f"the ball is {dx} to the right and {dy} above the agent. \n" + \
+    #           f"Agent angle is {agent_z}.")
+    plt.show()
+
+def plot_fixed_abs_agent_inf(model, abs_agent_loc, scale=10):
+    num_x = 9*scale
+    num_y = 6*scale
+    
+    agent_x = abs_agent_loc[0]
+    agent_y = abs_agent_loc[1]
+    agent_z = abs_agent_loc[2]
+
+    x = np.linspace(-4500, 4500, num=num_x)
+    y = np.linspace(-3000, 3000, num=num_y)
+    xv, yv = np.meshgrid(x,y)
+    #print("xv.shape: ", xv.shape)
+
+
+
+    abs_ball_mesh = np.stack((xv.flatten(), yv.flatten()), axis=1)
+    # abs_ball = []
+    # for i, ball_loc in enumerate(abs_ball_mesh):
+    #     abs_ball.append(np.append(ball_loc, 0))
+    abs_ball = abs_ball_mesh
+
+
+
+    abs_agent = np.array((abs_agent_loc[0], abs_agent_loc[1]))
+    #print("rel_goal: ", rel_goal)
+    abs_agent = torch.tensor(abs_agent).to(dtype=torch.float32)
+    abs_agent = abs_agent.repeat((num_x*num_y, 1))
+
+    trig_angle = torch.tensor([1,0]).to(dtype=torch.float32)
+    trig_angle = trig_angle.repeat((num_x*num_y, 1))
+
+    print("abs_agent.size()", abs_agent.size())
+    abs_ball = np.array(abs_ball)
+    abs_ball = torch.from_numpy(abs_ball).to(dtype=torch.float32)
+    print("abs_ball.size()", abs_ball.size())
+    abs_input = torch.cat((abs_agent, abs_ball, trig_angle), dim=1) #(num_x*num_y , 8)
+    abs_input[:, :-2] = abs_input[:, :-2] / 4500
+    #print("rel_input.size(): ", rel_input.size())
+    print("abs_input.size()", abs_input.size())
+    print("abs_input_head:", abs_input[:10, :])
+
+    output = model(abs_input)
+    # output = torch.from_numpy(output)
+    # output = output.view(num_y, num_x)
+    output = np.reshape(output.numpy(force=True), shape=(num_y, num_x))
+    #print("output.size: ", output.shape)
+    plt.rcParams['figure.dpi'] = 600 
+    plt.imshow(output, extent=[-4500, 4500, -3000, 3000], origin='lower')
+    plt.colorbar()
+    #plt.title(f"Horizon {horizon} \n Opponent goal is on the right.")
+    #plt.xlabel(f"Agent coordinates are ({agent_x}, {agent_y}, {agent_z})")
     plt.show()
 
 if __name__ == "__main__":
@@ -374,13 +428,19 @@ if __name__ == "__main__":
     # model_path = "./artifact_download/tdgoal_h100_ep500_epoch200_l5_trial_2025-08-27_16-10-28_pv5kiybp_best.pth"
     # run_path = "dpinchuk-university-of-wisconsin-madison/tdgoal_h100_ep500_epoch200/pv5kiybp"
     #model_path = "./artifact_download/ep_500_abs_l5_BCE_trial_2025-12-01_03-58-56_ssc8vz8m_best.pth"
-    model_path = "./artifact_download/ep_500_l5_BCE_trial_2025-12-11_22-15-31_yy01it4b_best.pth"
-    run_path = "dpinchuk-university-of-wisconsin-madison/td_abs_inf_500ep/yy01it4b"
+
+    # model_path = "./artifact_download/ep_500_l5_BCE_trial_2025-12-11_22-15-31_yy01it4b_best.pth" #best from sweep
+    # run_path = "dpinchuk-university-of-wisconsin-madison/td_abs_inf_500ep/yy01it4b" #best from regular sweep
+
+    model_path = "./artifact_download/ep_500_l5_BCE_EMA_trial_2025-12-11_20-26-13_b34uxfws_best.pth" #best from sweep EMA
+    run_path = "dpinchuk-university-of-wisconsin-madison/td_abs_inf_500ep/b34uxfws" #best from sweep EMA
     assert os.path.exists(model_path)
     model = load_wandb_model(run_path, model_path, device)
+    model.eval()
     # iso_reg = load_iso_reg("./temp_best_td_model_iso_reg.pth")
     delta = [100, 0]
-    plot_agent_near_ball_abs_inf(model, None, delta, agent_z=0, scale=10)
+    #plot_agent_near_ball_abs_inf(model, None, delta, agent_z=0, scale=10)
+    plot_fixed_abs_agent_inf(model, [0, 0, 0], scale=10)
     
 
     # for x in [-4000, -2000, -1000, 0, 1000, 2000, 4000]:

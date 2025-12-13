@@ -6,46 +6,45 @@ import os
 
 from artifact_download import load_wandb_model
 
-path = "./data/mueller_pts.csv"
-df = pd.read_csv(path)     # each row: x,y
-pts = torch.tensor(df.values, dtype=torch.float32)
+path_gt = "./data/mueller_TPTdata_beta_0p1_2025.csv"
+df = pd.read_csv(path_gt, header=None)     # each row: x,y
+data = df.to_numpy()
+pts = data[:, :2]
+q_gt = data[:, 2]
+q_gt = q_gt * (-1) + 1
 
-print(pts.shape)   # (N, 2)
-#plt.scatter(pts[:, 0], pts[:, 1])
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# model_path = "./artifact_download/tdgoal_h100_ep500_epoch200_l5_trial_2025-08-27_16-10-28_pv5kiybp_best.pth"
-# run_path = "dpinchuk-university-of-wisconsin-madison/tdgoal_h100_ep500_epoch200/pv5kiybp"
-model_path = "./artifact_download_muller/ep_100_l5_BCE_trial_2025-12-08_22-38-16_m5zv1tke_best.pth"
-run_path = "dpinchuk-university-of-wisconsin-madison/td_committor_ep100/m5zv1tke"
+model_path = "./artifact_download_muller/ep_400_l5_BCE_trial_2025-12-12_06-37-06_mvjlar04_best.pth"
+run_path = "dpinchuk-university-of-wisconsin-madison/td_committor_ep400/mvjlar04"
 assert os.path.exists(model_path)
-model = load_wandb_model(run_path, model_path, device)
+model = load_wandb_model(run_path, model_path, device, input_size=2)
 model.eval()
 
+pts = torch.from_numpy(pts).to(dtype=torch.float32)
 output = model(pts)
 
 print("inference complete")
+print("output.shape:", output.shape)
 
-# plt.scatter(pts[:, 0], pts[:, 1], c=output.numpy(force=True), cmap='viridis')
-# plt.colorbar(label="probability")
-
-path_gt = "./data/mueller_q_beta_0p025.csv"
-df = pd.read_csv(path_gt, header=None)     # each row: x,y
-print(df)
-qlist = df.iloc[0].values
-print(len(qlist))
-
-qlist = np.array(qlist)
-qlist = qlist * (-1) + 1
-q = torch.from_numpy(qlist)
-
-
+q_gt = torch.from_numpy(q_gt).to(dtype=torch.float32)
 mse_loss = torch.nn.MSELoss()
-print(mse_loss(output.squeeze(), q[1:].squeeze()))
+l1_loss = torch.nn.L1Loss()
+print("MSE: ", mse_loss(output.squeeze(), q_gt.squeeze()))
+print("L1: ", l1_loss(output.squeeze(), q_gt.squeeze()))
+max_l1 = torch.max(torch.abs(output.squeeze() - q_gt.squeeze()))
+print("max L1: ", max_l1)
 
-out_list = []
-for i in range(len(output)):
-    out_list.append(output.squeeze().detach()[i].item())
-#output = [x for x in output.squeeze().numpy(force=True)]
-plt.plot(pts[:, 0], pts[:, 1], c=out_list, cmap='viridis')
+# out_list = []
+# for i in range(len(output)):
+#     out_list.append(output.squeeze().detach()[i].item())
+output = output.squeeze().numpy(force=True)
+pts = pts.numpy(force=True)
+print(type(output))
+print(output.shape)
+print(output.dtype)
+
+plt.rcParams['figure.dpi'] = 600
+plt.scatter(pts[:, 0], pts[:, 1], c=output, cmap='viridis')
+plt.colorbar(label='probability')
