@@ -1,0 +1,55 @@
+algorithm: "mc" # or td"
+mode: "wandb_sweep" #or "single_run" #or "sweep"
+domain: "committor" #"committor" #or robocup
+path: ./data/EM_td_ep_400.pkl  #./data/n_eps-500-env-base_agent_env_2025-11-26_16-18-29.pkl #./data/EM_td_ep_400.pkl 
+#"./data/n_eps-100-env-base_agent_env_2025-11-06_21-07-54.pkl" #training data path
+model_storage_dir: "models"
+chtc: True
+max_k: 100
+train_val_test_split: [0.6, 0.2, 0.2]
+num_epochs: 300
+train_forward_sig: False #Manually pass outputs of model during training through a sigmoid layer inside script. 
+                        #It is always turned off for the model.
+eval_frequency: 5 #Evaluation will happen every eval_frequency epochs during training
+train_loss_frequency: 1000 #Report running avg loss after this inteverval of steps
+loss_fn: "BCE"
+optimizer: "Adam"
+objective_value: "best_val_ba" #or "best_val_loss"
+EMA: False
+
+wandb:
+  entity: "dpinchuk-university-of-wisconsin-madison"
+  project: "mc_committor_ep400" #"td_abs_inf_500ep" #"td_committor_ep100" #"td_abs_inf_500ep_MSE" #"td_committor_ep100" # #"td_test"
+
+wandb_sweep:
+  name: "com_ep400_l5_BCE" #"ep_500_l5_BCE" #"ep_400_l5_BCE" #"ep_500_l5_BCE" #"ep_500_l5_BCE_EMA" #"ep_100_abs_l5_BCE"
+  n_layers: 5
+  sweep_id: "96gzhyaa" #"967j9uqm" (ep_500_l5_BCE) #"lyaeis7r" (ep_400_l5_BCE) #"c86d33sk" #(ep_500_l5_BCE_EMA) #"jmt004q6" (ep_500_l5_BCE) #"h210preq" #"51nmbbex" #"b45t4g0f" #ux0zd8ly #"fq8srmh7"
+  count: 1
+
+optuna_settings:
+  study_name: "tdgoal_h100_ep100_epoch200"
+  db_dir: "databases"
+  db_name: "tdgoal_h100_ep100_epoch200.db"
+
+  num_trials: 1
+  n_startup_trials: 10
+
+search_space:
+  n_layers_range: [1, 5]
+  num_neurons_range: [8, 64] #number of neurons in each layer
+  bs_range: [32, 512] #batch size range
+  bs_step: 32
+  lr_range: [1e-5, 1e-2]
+  target_update_frequency_range: [10, 1010] #steps. 
+  tuf_step: 100
+  alpha_ema_range: [0.9, 0.999]
+
+single_run:
+  n_layers: 2 #hidden layers
+  hidden_sizes: [8, 64] #number of neurons in each layer
+  bs:  200
+  lr: 3e-3
+  target_update_frequency: 9000 #steps. 
+
+
